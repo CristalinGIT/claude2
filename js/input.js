@@ -1,5 +1,9 @@
 // Управление: два виртуальных стика на тачскрине, WASD + мышь на компьютере.
 const STICK_R = 60;
+// Зоны стиков: только нижняя часть экрана (слева — движение, справа — прицел).
+const ZONE_TOP = 0.35;
+const REST_X = 110;
+const REST_Y = 100;
 
 export class Input {
   constructor(root, { aimFromMouse }) {
@@ -13,6 +17,7 @@ export class Input {
 
     this.move.el = makeStick(root, 'move');
     this.aim.el = makeStick(root, 'aim');
+    this.touchUi = matchMedia('(pointer: coarse)').matches;
 
     root.addEventListener('touchstart', (e) => this.onTouchStart(e), { passive: false });
     root.addEventListener('touchmove', (e) => this.onTouchMove(e), { passive: false });
@@ -31,10 +36,13 @@ export class Input {
   }
 
   onTouchStart(e) {
-    if (!this.enabled) return;
+    // Кнопки и окна поверх игры должны нажиматься как обычно.
+    if (!this.enabled || e.target.closest('button, .overlay')) return;
     e.preventDefault();
     this.mouse.active = false;
+    this.touchUi = true;
     for (const t of e.changedTouches) {
+      if (t.clientY < window.innerHeight * ZONE_TOP) continue;
       const stick = t.clientX < window.innerWidth / 2 ? this.move : this.aim;
       if (stick.id !== null) continue;
       stick.id = t.identifier;
@@ -45,7 +53,7 @@ export class Input {
   }
 
   onTouchMove(e) {
-    if (!this.enabled) return;
+    if (!this.enabled || (this.move.id === null && this.aim.id === null)) return;
     e.preventDefault();
     for (const t of e.changedTouches) {
       for (const stick of [this.move, this.aim]) {
@@ -70,9 +78,25 @@ export class Input {
         if (stick.id !== t.identifier) continue;
         stick.id = null;
         stick.x = stick.y = 0;
-        stick.el.style.display = 'none';
+        this.rest(stick);
       }
     }
+  }
+
+  // Стик в покое — полупрозрачный в своём углу, чтобы было видно, где зона управления.
+  rest(stick) {
+    if (!this.touchUi || !this.enabled) { stick.el.style.display = 'none'; return; }
+    const left = stick === this.move;
+    const x = left ? REST_X : window.innerWidth - REST_X;
+    const y = window.innerHeight - REST_Y;
+    stick.x = stick.y = 0;
+    showStick(stick, x, y);
+    stick.el.classList.add('resting');
+  }
+
+  setEnabled(on) {
+    this.enabled = on;
+    this.reset();
   }
 
   read() {
@@ -100,7 +124,7 @@ export class Input {
 
   reset() {
     for (const s of [this.move, this.aim]) {
-      s.id = null; s.x = s.y = 0; s.el.style.display = 'none';
+      s.id = null; s.x = s.y = 0; this.rest(s);
     }
     this.keys.clear();
     this.mouse.down = false;
@@ -119,6 +143,7 @@ function makeStick(root, kind) {
 function showStick(stick, ox, oy) {
   const el = stick.el;
   el.style.display = 'block';
+  el.classList.remove('resting');
   el.style.left = ox + 'px';
   el.style.top = oy + 'px';
   const k = el.firstChild;

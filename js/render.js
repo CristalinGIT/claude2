@@ -25,6 +25,15 @@ export class Renderer {
     this.buildLights();
     this.buildArena();
 
+    this.zoneRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.97, 1, 96),
+      new THREE.MeshBasicMaterial({ color: 0xff3355, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
+    );
+    this.zoneRing.rotation.x = -Math.PI / 2;
+    this.zoneRing.position.set(this.center.x, 0.05, this.center.z);
+    this.zoneRing.visible = false;
+    this.scene.add(this.zoneRing);
+
     this.tankMeshes = new Map();
     this.bulletMeshes = new Map();
     this.bulletGeo = new THREE.SphereGeometry(CFG.BULLET_R * 1.3, 10, 8);
@@ -158,9 +167,7 @@ export class Renderer {
       tm.turret.rotation.y = -t.tur;
       tm.ring.visible = t.id === myId;
       tm.ring.rotation.z += dt * 1.5;
-      for (let i = 0; i < tm.hpPips.length; i++) {
-        tm.hpPips[i].material = i < t.hp ? tm.hpOn : tm.hpOff;
-      }
+      updatePips(tm, t.hp, t.maxHp ?? CFG_HP, t.shield ?? 0);
     }
     for (const [id, tm] of this.tankMeshes) {
       if (!seen.has(id)) {
@@ -180,6 +187,7 @@ export class Renderer {
         this.scene.add(m);
       }
       m.position.set(b.x, 0.75, b.y);
+      m.scale.setScalar((b.r ?? CFG.BULLET_R) / CFG.BULLET_R);
     }
     for (const [id, m] of this.bulletMeshes) {
       if (!seenB.has(id)) {
@@ -187,6 +195,14 @@ export class Renderer {
         m.material.dispose();
         this.bulletMeshes.delete(id);
       }
+    }
+
+    if (state.zone > 0) {
+      this.zoneRing.visible = true;
+      this.zoneRing.scale.setScalar(state.zone);
+      this.zoneRing.material.opacity = 0.6 + 0.3 * Math.sin(time * 6);
+    } else {
+      this.zoneRing.visible = false;
     }
 
     this.updateParticles(dt);
@@ -295,19 +311,33 @@ function buildTank(color) {
   ring.position.y = 0.03;
   root.add(ring);
 
-  // Здоровье — квадратики над танком.
-  const hpOn = new THREE.MeshBasicMaterial({ color: 0x6dff7a });
-  const hpOff = new THREE.MeshBasicMaterial({ color: 0x40404a });
-  const pipGeo = new THREE.BoxGeometry(0.34, 0.08, 0.18);
-  const hpPips = [];
-  for (let i = 0; i < CFG.HP; i++) {
-    const p = new THREE.Mesh(pipGeo, hpOn);
-    p.position.set((i - (CFG.HP - 1) / 2) * 0.42, 1.55, -0.2);
-    root.add(p);
-    hpPips.push(p);
-  }
+  // Здоровье — квадратики над танком (строятся в updatePips).
+  const pips = new THREE.Group();
+  pips.position.set(0, 1.55, -0.2);
+  root.add(pips);
 
-  return { root, body, turret, ring, hpPips, hpOn, hpOff };
+  return { root, body, turret, ring, pips, pipKey: '' };
+}
+
+const CFG_HP = 3;
+const PIP_GEO = new THREE.BoxGeometry(0.3, 0.08, 0.18);
+const PIP_ON = new THREE.MeshBasicMaterial({ color: 0x6dff7a });
+const PIP_OFF = new THREE.MeshBasicMaterial({ color: 0x40404a });
+const PIP_SHIELD = new THREE.MeshBasicMaterial({ color: 0x5cc8ff });
+
+function updatePips(tm, hp, maxHp, shield) {
+  const key = hp + '/' + maxHp + '/' + shield;
+  if (tm.pipKey === key) return;
+  tm.pipKey = key;
+  tm.pips.clear();
+  const n = maxHp + shield;
+  const step = 0.36;
+  for (let i = 0; i < n; i++) {
+    const mat = i < maxHp ? (i < hp ? PIP_ON : PIP_OFF) : PIP_SHIELD;
+    const p = new THREE.Mesh(PIP_GEO, mat);
+    p.position.x = (i - (n - 1) / 2) * step;
+    tm.pips.add(p);
+  }
 }
 
 function checkerTexture() {

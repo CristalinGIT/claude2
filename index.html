@@ -34,28 +34,55 @@
         <summary>Как играть</summary>
         <p>Все в одной Wi-Fi сети или на раздаче с телефона. Один нажимает «Создать игру» и называет код, остальные вводят его и жмут «Войти».</p>
         <p>Левый палец — движение, правый — прицел и стрельба. На компьютере: WASD и мышь.</p>
-        <p>Пули рикошетят один раз — и после рикошета могут попасть в вас самих. Побеждает тот, кто первым уничтожит <b id="kills-to-win">10</b> танков.</p>
+        <p>Пули рикошетят — и после рикошета могут попасть в вас самих.</p>
+        <p>Режим «Раунды»: без возрождений, раунд выигрывает последний выживший (или команда). Проигравшие получают карточку усиления, победитель — очко.</p>
       </details>
     </div>
   </section>
 
   <section id="lobby" class="screen hidden">
-    <div class="panel">
-      <div id="lobby-code-box" class="code-box">
-        <span>Код комнаты</span>
-        <strong id="lobby-code">----</strong>
-      </div>
-      <h2>Игроки <small id="player-count"></small></h2>
-      <ul id="players"></ul>
-      <div id="host-controls">
-        <div class="row">
-          <button id="btn-del-bot">− бот</button>
-          <button id="btn-add-bot">+ бот</button>
+    <div class="panel wide">
+      <div class="lobby-grid">
+        <div class="lobby-side">
+          <div id="lobby-code-box" class="code-box">
+            <span>Код комнаты</span>
+            <strong id="lobby-code">----</strong>
+          </div>
+          <div class="setting">
+            <span>Режим</span>
+            <div class="seg" id="set-mode">
+              <button data-v="rounds">Раунды</button>
+              <button data-v="frags">Фраги</button>
+            </div>
+          </div>
+          <div class="setting">
+            <span>Состав</span>
+            <div class="seg" id="set-teams">
+              <button data-v="0">Каждый сам</button>
+              <button data-v="2">2 ком.</button>
+              <button data-v="3">3</button>
+              <button data-v="4">4</button>
+            </div>
+          </div>
+          <div class="setting">
+            <span id="target-label">Раундов до победы</span>
+            <div class="stepper">
+              <button id="target-minus">−</button>
+              <b id="target-val">5</b>
+              <button id="target-plus">+</button>
+            </div>
+          </div>
+          <p id="mode-hint" class="hint"></p>
         </div>
-        <button id="btn-start" class="big primary">Начать бой</button>
+        <div class="lobby-main">
+          <h2>Игроки <small id="player-count"></small></h2>
+          <div id="teams"></div>
+          <button id="btn-fill">Выровнять команды ботами</button>
+          <button id="btn-start" class="big primary">Начать бой</button>
+          <p id="client-wait" class="muted">Ждём, пока хост начнёт…</p>
+          <button id="btn-leave" class="ghost">Выйти</button>
+        </div>
       </div>
-      <p id="client-wait" class="muted">Ждём, пока хост начнёт…</p>
-      <button id="btn-leave" class="ghost">Выйти</button>
     </div>
   </section>
 
@@ -65,14 +92,27 @@
     <div id="hud">
       <button id="btn-exit" aria-label="Выйти">✕</button>
       <div id="scoreboard"></div>
-      <div id="hud-code"></div>
+      <div class="hud-right">
+        <div id="hud-code"></div>
+        <div id="round-info"></div>
+      </div>
     </div>
     <div id="center-msg" class="hidden"></div>
-    <div id="end" class="hidden">
+    <div id="draft" class="overlay hidden">
+      <div class="draft-box">
+        <h2 id="draft-title"></h2>
+        <p id="draft-sub"></p>
+        <div id="draft-cards"></div>
+        <div class="timer"><div id="draft-bar"></div></div>
+        <p id="draft-wait" class="muted"></p>
+        <p id="my-cards" class="muted"></p>
+      </div>
+    </div>
+    <div id="end" class="overlay hidden">
       <div class="panel">
         <h2 id="end-title"></h2>
         <table>
-          <thead><tr><th>Игрок</th><th>Фраги</th><th>Смерти</th></tr></thead>
+          <thead><tr><th>Игрок</th><th>Фраги</th><th>Смерти</th><th>Карты</th></tr></thead>
           <tbody id="end-table"></tbody>
         </table>
         <div id="end-host" class="row">

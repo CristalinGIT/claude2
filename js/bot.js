@@ -25,7 +25,7 @@ export function botThink(game, t, dt) {
 
     if (see) {
       // Упреждение по скорости цели плюс небольшая ошибка, чтобы бот не был идеальным.
-      const lead = dist / CFG.BULLET_SPEED;
+      const lead = dist / (CFG.BULLET_SPEED * t.s.bSpeed);
       const px = target.x + target.vx * lead * 0.8;
       const py = target.y + target.vy * lead * 0.8;
       if (b.react <= 0) {
@@ -69,9 +69,21 @@ export function botThink(game, t, dt) {
     [mx, my] = b.wander ?? [0, 0];
   }
 
+  // Сужающаяся зона: держимся ближе к центру.
+  if (game.zone > 0) {
+    const cx = MAP.w * CELL / 2, cy = MAP.h * CELL / 2;
+    const dx = cx - t.x, dy = cy - t.y;
+    const d = Math.hypot(dx, dy);
+    if (d > game.zone - 2.5 && d > 0.5) {
+      mx = mx * 0.3 + (dx / d) * 1.5;
+      my = my * 0.3 + (dy / d) * 1.5;
+    }
+  }
+
   // Уклонение от летящих в нас пуль.
   for (const bl of game.bullets) {
     if (bl.owner === t.id && bl.bounces === 0) continue;
+    if (bl.owner !== t.id && game.teams && bl.team === t.team) continue;
     const rx = t.x - bl.x, ry = t.y - bl.y;
     const d = Math.hypot(rx, ry);
     if (d > 6) continue;
@@ -108,16 +120,12 @@ export function botThink(game, t, dt) {
 function pickTarget(game, t) {
   let best = null, bestD = Infinity;
   for (const o of game.tanks.values()) {
-    if (o === t || !o.alive || isTeammate(t, o)) continue;
+    if (!o.alive || !game.isEnemy(t, o)) continue;
     let d = Math.hypot(o.x - t.x, o.y - t.y);
     if (!lineOfSight(t.x, t.y, o.x, o.y)) d += 8;
     if (d < bestD) { bestD = d; best = o; }
   }
   return best;
-}
-
-function isTeammate(a, b) {
-  return a.team != null && a.team === b.team;
 }
 
 function nextWaypoint(b, t) {
