@@ -305,6 +305,19 @@ export class Game {
     this.phaseT = CFG.DRAFT_TIME;
   }
 
+  // «Другие карты»: один раз за выбор, все новые карты отличаются от прежних.
+  reroll(id) {
+    const offer = this.offers.get(id);
+    const t = this.tanks.get(id);
+    if (!offer || !t || offer.picked || offer.rerolled) return false;
+    const options = rollCards(t.cards, 3, offer.options);
+    if (!options.length) return false;
+    offer.options = options;
+    offer.rerolled = true;
+    this.newOffers.push({ id, options, rerolled: true });
+    return true;
+  }
+
   pickCard(id, cardId) {
     const offer = this.offers.get(id);
     const t = this.tanks.get(id);

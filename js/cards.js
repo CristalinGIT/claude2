@@ -207,11 +207,12 @@ export function cardAvailable(card, owned, stats = statsFromCards(owned)) {
 }
 
 // Случайные n карт из доступных; эволюции выпадают чаще, чтобы их было видно.
-export function rollCards(owned, n = 3) {
+// exclude — карты, которые выпадать не должны (например, прошлый набор при «Другие карты»).
+export function rollCards(owned, n = 3, exclude = []) {
   const stats = statsFromCards(owned);
   const pool = [];
   for (const c of CARDS) {
-    if (!cardAvailable(c, owned, stats)) continue;
+    if (exclude.includes(c.id) || !cardAvailable(c, owned, stats)) continue;
     pool.push({ id: c.id, w: c.kind === 'evo' ? 3 : 1 });
   }
   const res = [];

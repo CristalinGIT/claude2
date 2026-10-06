@@ -9,7 +9,7 @@ import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { sfx, unlockAudio, setMuted } from './sound.js';
 
-const APP_VERSION = '11';
+const APP_VERSION = '12';
 
 const MAX_HUMANS = 8;
 const MAX_TANKS = 12;
@@ -130,6 +130,7 @@ function initMenu() {
     if (b) sandboxCard(b.dataset.cat, +b.dataset.d);
   });
 
+  $('#btn-reroll').addEventListener('click', requestReroll);
   $('#draft-cards').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-card]');
     if (b) pickCard(b.dataset.card);
@@ -261,6 +262,7 @@ function hostOnMessage(connId, msg) {
   if (!p) return;
   if (msg.t === 'in' && app.game) app.game.setInput(p.id, msg);
   if (msg.t === 'pick' && app.game) app.game.pickCard(p.id, String(msg.card));
+  if (msg.t === 'reroll' && app.game) app.game.reroll(p.id);
   if (msg.t === 'team' && !app.inGame) hostMoveToTeam(p, +msg.team);
 }
 
@@ -414,10 +416,10 @@ function hostFrame(dt) {
 
     // Раздаём карточки проигравшим.
     for (const offer of g.takeOffers()) {
-      if (offer.id === app.myId) showOffer(offer.options);
+      if (offer.id === app.myId) showOffer(offer.options, offer.rerolled);
       else {
         const p = app.lobby.find((x) => x.id === offer.id);
-        if (p?.connId) app.net.send(p.connId, { t: 'draft', options: offer.options });
+        if (p?.connId) app.net.send(p.connId, { t: 'draft', options: offer.options, rerolled: !!offer.rerolled });
       }
     }
     if (g.phase !== phaseBefore && g.phase === 'countdown') broadcastRoster();
@@ -491,7 +493,7 @@ function clientOnMessage(msg) {
       enterLobby();
       break;
     case 'draft':
-      showOffer(msg.options);
+      showOffer(msg.options, msg.rerolled);
       break;
     case 's':
       clientOnSnap(msg);
@@ -564,10 +566,23 @@ function interpolate(a, b, k) {
 
 // ---------- Карточки ----------
 
-function showOffer(options) {
-  app.myOffer = { options, picked: null };
+function showOffer(options, rerolled = false) {
+  app.myOffer = { options, picked: null, rerolled, waitingReroll: false };
   renderDraftCards();
   sfx.spawn();
+}
+
+function requestReroll() {
+  const offer = app.myOffer;
+  if (!offer || offer.picked || offer.rerolled || offer.waitingReroll) return;
+  offer.waitingReroll = true;
+  if (app.role === 'host') {
+    // Хост: новые карты придут через takeOffers на следующем тике.
+    if (!app.game.reroll(app.myId)) offer.waitingReroll = false;
+  } else {
+    app.net.send({ t: 'reroll' });
+  }
+  renderDraftCards();
 }
 
 function pickCard(cardId) {
@@ -583,6 +598,9 @@ function renderDraftCards() {
   const box = $('#draft-cards');
   box.innerHTML = '';
   const offer = app.myOffer;
+  const rr = $('#btn-reroll');
+  rr.classList.toggle('hidden', !offer || !!offer.picked || offer.rerolled);
+  rr.disabled = !!offer?.waitingReroll;
   if (!offer) return;
   const mine = app.roster.get(app.myId)?.cards ?? [];
   for (const id of offer.options) {
