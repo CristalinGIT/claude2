@@ -110,10 +110,10 @@ export const CARDS = [
     apply: (s) => { s.speed *= 1.18; } },
   { id: 'shield', kind: 'stat', icon: '🔵', name: 'Энергощит', desc: 'Щит поглощает попадание и восстанавливается за 7 с. Каждая следующая карта: −1 с', max: 3,
     apply: (s) => { s.shieldCd = s.shieldCd ? s.shieldCd - 1 : 7; } },
-  { id: 'regen', kind: 'stat', icon: '🔧', name: 'Ремкомплект', desc: 'Через 8 с без урона чинит 1 деление (10 HP), дальше ещё по делению каждые 5 с. Урон сбрасывает отсчёт. Следующие карты: +5 HP за раз', max: 3,
+  { id: 'regen', kind: 'stat', icon: '🔧', name: 'Ремкомплект', desc: 'Через 8 с без урона чинит полделения (17 HP), дальше ещё по 17 HP каждые 5 с. Урон сбрасывает отсчёт. Следующие карты: +5 HP за раз', max: 3,
     apply: (s) => {
       s.regenDelay = 8;
-      s.regenAmount = s.regenAmount ? s.regenAmount + 5 : 10;
+      s.regenAmount = s.regenAmount ? s.regenAmount + 5 : 17;
     } },
   { id: 'vampire', kind: 'stat', icon: '🧛', name: 'Вампир', desc: 'Лечит вас на 33% от нанесённого урона', max: 1,
     apply: (s) => { s.vampire = 0.33; } },

@@ -2,6 +2,7 @@
 import * as THREE from '../vendor/three.module.min.js';
 import { MAP, CELL } from './map.js';
 import { CFG } from './game.js';
+import { BASE_DAMAGE } from './cards.js';
 
 const WALL_H = 1.4;
 const CAM_TILT = THREE.MathUtils.degToRad(58);
@@ -444,7 +445,7 @@ const BAR_W = 1.4;
 const BAR_GEO = new THREE.BoxGeometry(BAR_W + 0.08, 0.06, 0.22);
 const BAR_FILL_GEO = new THREE.BoxGeometry(BAR_W, 0.07, 0.16).translate(BAR_W / 2, 0, 0);
 const BAR_BG = new THREE.MeshBasicMaterial({ color: 0x24242c });
-const TICK_GEO = new THREE.BoxGeometry(0.025, 0.08, 0.17);
+const TICK_GEO = new THREE.BoxGeometry(0.05, 0.08, 0.17);
 const TICK_MAT = new THREE.MeshBasicMaterial({ color: 0x15151b });
 
 function updateBar(tm, hp, maxHp) {
@@ -456,11 +457,11 @@ function updateBar(tm, hp, maxHp) {
   tm.fillMat.color.setHex(k > 0.6 ? 0x6dff7a : k > 0.3 ? 0xffd23f : 0xff4d4d);
   // Бар чуть длиннее у танков с бронёй.
   tm.bar.scale.x = Math.min(1.6, 0.85 + maxHp / 650);
-  // Деления по 10 HP.
+  // Деления по одному попаданию (34 HP).
   if (tm.tickMax !== maxHp) {
     tm.tickMax = maxHp;
     tm.ticks.clear();
-    for (let v = 10; v < maxHp; v += 10) {
+    for (let v = BASE_DAMAGE; v < maxHp - 1; v += BASE_DAMAGE) {
       const m = new THREE.Mesh(TICK_GEO, TICK_MAT);
       m.position.set(-BAR_W / 2 + (v / maxHp) * BAR_W, 0.02, 0);
       tm.ticks.add(m);
