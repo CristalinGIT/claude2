@@ -1,7 +1,7 @@
 import {
-  Game, EV, COLORS, TEAM_COLORS, TEAM_NAMES, DEFAULT_SETTINGS, angleDiff, sideName, sideColor,
+  Game, EV, TF, COLORS, TEAM_COLORS, TEAM_NAMES, DEFAULT_SETTINGS, angleDiff, sideName, sideColor,
 } from './game.js';
-import { CARDS, CARD_BY_ID } from './cards.js';
+import { CARDS, CARD_BY_ID, ABILITIES, statsFromCards } from './cards.js';
 import { hostRoom, joinRoom } from './net.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
@@ -495,8 +495,9 @@ function interpolate(a, b, k) {
       x: lerp(p[1], t[1], kk), y: lerp(p[2], t[2], kk),
       rot: p[3] + angleDiff(p[3], t[3]) * kk,
       tur: p[4] + angleDiff(p[4], t[4]) * kk,
-      hp: t[5], alive: !!(t[6] & 1), inv: !!(t[6] & 2),
-      kills: t[7], deaths: t[8], respawn: t[9], maxHp: t[10], shield: t[11],
+      hp: t[5], alive: !!(t[6] & TF.ALIVE), inv: !!(t[6] & TF.INV), invis: !!(t[6] & TF.INVIS),
+      poisoned: !!(t[6] & TF.POISONED), slowed: !!(t[6] & TF.SLOWED),
+      kills: t[7], deaths: t[8], respawn: t[9], maxHp: t[10], shield: t[11], abilityT: t[12] / 10,
       color: app.roster.get(t[0])?.color ?? 0xffffff,
     };
   });
@@ -509,7 +510,7 @@ function interpolate(a, b, k) {
     };
   });
   return {
-    tanks, bullets,
+    tanks, bullets, walls: b.walls, mines: b.mines,
     phase: b.phase, phaseT: b.phaseT, round: b.round, zone: b.zone,
     scores: b.scores, roundWinner: b.roundWinner, winner: b.winner, waiting: b.waiting,
   };
@@ -545,10 +546,25 @@ function renderDraftCards() {
     b.className = 'card' + (offer.picked === id ? ' picked' : '') + (offer.picked && offer.picked !== id ? ' faded' : '');
     b.dataset.card = id;
     b.disabled = !!offer.picked;
-    b.innerHTML = `<span class="card-icon">${c.icon}</span><b>${c.name}</b><span>${c.desc}</span>` +
-      (have ? `<small>уже ${have}/${c.max}</small>` : '');
+    b.classList.add('kind-' + c.kind);
+    b.innerHTML = cardBadge(c) + `<span class="card-icon">${c.icon}</span><b>${c.name}</b><span>${c.desc}</span>` +
+      (have ? `<small>уже ${have}/${c.max}</small>` : '') + replaceNote(c, mine);
     box.appendChild(b);
   }
+}
+
+function cardBadge(c) {
+  if (c.kind === 'evo') return '<em class="badge evo">⭐ Эволюция</em>';
+  if (c.kind === 'ability') return '<em class="badge ab">Способность</em>';
+  return '';
+}
+
+// Предупреждение, что новая способность заменит текущую.
+function replaceNote(c, mine) {
+  if (c.kind !== 'ability') return '';
+  const cur = statsFromCards(mine).ability;
+  if (!cur || cur === c.id) return '';
+  return `<small class="warn">заменит «${ABILITIES[cur].name}»</small>`;
 }
 
 // ---------- Справочник карточек ----------
@@ -569,15 +585,17 @@ function renderCatalog() {
   $('#catalog-sub').textContent = sandbox
     ? 'Тренировка: добавляйте и убирайте карточки кнопками + и − и сразу пробуйте в бою.'
     : 'В режиме «Раунды» после каждого проигранного раунда выпадают 3 случайные карточки — выберите одну. ' +
-      'Карточки складываются: одну и ту же можно взять несколько раз (до указанного предела).';
+      'Карточки складываются до указанного предела. Способность у танка одна — новая заменяет старую, ' +
+      'а повтор той же ускоряет перезарядку на 20%. Эволюции появляются, когда у вас есть нужная карта.';
   $('#catalog-list').innerHTML = CARDS.map((c) => {
     const have = mine.filter((x) => x === c.id).length;
     const right = sandbox
       ? `<div class="cnt-ctl"><button data-cat="${c.id}" data-d="-1">−</button><em>${have}/${c.max}</em>` +
         `<button data-cat="${c.id}" data-d="1">+</button></div>`
       : `<div class="cnt">${have ? `у вас ${have}/${c.max}` : (c.max > 1 ? `до ${c.max} раз` : 'один раз')}</div>`;
-    return `<div class="cat-item${have ? ' owned' : ''}"><span class="card-icon">${c.icon}</span>` +
-      `<b>${c.name}</b>${right}<span class="desc">${c.desc}</span></div>`;
+    const req = c.needs ? `<br><i>Эволюция, нужно: ${c.needs}</i>` : '';
+    return `<div class="cat-item kind-${c.kind}${have ? ' owned' : ''}"><span class="card-icon">${c.icon}</span>` +
+      `<b>${c.name}${cardBadge(c)}</b>${right}<span class="desc">${c.desc}${req}</span></div>`;
   }).join('');
 }
 
@@ -641,6 +659,35 @@ function handleEvents(events) {
       case EV.SHIELD:
         renderer.burst(x, y, { count: 16, color: 0x5cc8ff, speed: 5, size: 0.16, life: 0.4, up: 2 });
         sfx.clash();
+        break;
+      case EV.BLINK:
+        renderer.burst(x, y, { count: 18, color: 0xd9b3ff, speed: 5, size: 0.18, life: 0.4, up: 3 });
+        sfx.bounce();
+        break;
+      case EV.INVIS:
+        renderer.burst(x, y, { count: 14, color: 0xcfd6ff, speed: 3, size: 0.2, life: 0.5, up: 2 });
+        break;
+      case EV.WALL:
+        renderer.burst(x, y, { count: 12, color: 0xc9a46a, speed: 3, size: 0.25, life: 0.4, up: 4 });
+        sfx.hit();
+        break;
+      case EV.WALL_BREAK:
+        renderer.burst(x, y, { count: 18, color: 0xc9a46a, speed: 6, size: 0.3, life: 0.7, up: 5 });
+        sfx.boom();
+        break;
+      case EV.MINE:
+        sfx.bounce();
+        break;
+      case EV.MINE_BOOM:
+        renderer.burst(x, y, { count: 22, color: 0xffcc44, speed: 8, size: 0.3, life: 0.6, up: 5 });
+        renderer.burst(x, y, { count: 10, color: 0xff5522, speed: 5, size: 0.4, life: 0.7, up: 4 });
+        renderer.shake = Math.min(1, renderer.shake + 0.4);
+        sfx.boom();
+        break;
+      case EV.POISON:
+        renderer.burst(x, y, { count: 12, color: 0x7dff4d, speed: 3, size: 0.2, life: 0.5, up: 3 });
+        if (id === app.myId) flashDamage();
+        sfx.hit();
         break;
       case EV.HEAL:
         renderer.burst(x, y, { count: 8, color: 0x6dff7a, speed: 1.5, size: 0.16, life: 0.6, up: 5 });
@@ -727,6 +774,11 @@ function enterGame() {
   $('#hud-code').textContent = app.code ? 'Комната ' + app.code : '';
   if (!renderer) {
     renderer = new Renderer($('#canvas'));
+    renderer.colorOf = (id) => app.roster.get(id)?.color;
+    const ab = $('#btn-ability');
+    const press = (e) => { e.preventDefault(); input.abilityLatch = true; };
+    ab.addEventListener('touchstart', press, { passive: false });
+    ab.addEventListener('mousedown', press);
     input = new Input($('#game'), {
       aimFromMouse: (px, py) => renderer.aimDirection(px, py, app.myView),
     });
@@ -749,7 +801,12 @@ function frame(now) {
   const view = app.role === 'host' ? hostFrame(dt) : clientFrame(now);
   if (!view) return;
   app.myView = view.tanks.find((t) => t.id === app.myId);
-  renderer.render(view, app.myId, dt, now / 1000);
+  const myStats = myStatsCached();
+  renderer.render(view, app.myId, dt, now / 1000, {
+    isAlly,
+    laser: myStats.laser ? { bounces: myStats.bounces } : null,
+  });
+  updateAbilityButton(myStats);
   if (view.phase !== app.lastPhase) onPhaseChange(view, app.lastPhase);
   if (now - lastHud > 100) {
     updateHud(view);
@@ -768,6 +825,39 @@ function onPhaseChange(view, before) {
     if (w != null && mySide() === w) sfx.spawn();
   }
   if (view.phase === 'fight' && before === 'countdown') sfx.shot(true);
+}
+
+// Характеристики своего танка по картам из ростера (для кнопки способности и прицела).
+let statsCache = { key: null, stats: null };
+function myStatsCached() {
+  const cards = app.roster.get(app.myId)?.cards ?? [];
+  const key = cards.join(',');
+  if (statsCache.key !== key) statsCache = { key, stats: statsFromCards(cards) };
+  return statsCache.stats;
+}
+
+function isAlly(id) {
+  if (id === app.myId) return true;
+  if (!app.settings.teams) return false;
+  const a = app.roster.get(id), me = app.roster.get(app.myId);
+  return !!a && !!me && a.team === me.team;
+}
+
+function updateAbilityButton(stats) {
+  const btn = $('#btn-ability');
+  const me = app.myView;
+  const ab = stats.ability && ABILITIES[stats.ability];
+  if (!ab || !me) { btn.classList.add('hidden'); return; }
+  btn.classList.remove('hidden');
+  if (btn.dataset.ab !== stats.ability) {
+    btn.dataset.ab = stats.ability;
+    btn.querySelector('.ab-icon').textContent = ab.icon;
+  }
+  const left = me.abilityT || 0;
+  const frac = stats.abilityCd ? Math.min(1, left / stats.abilityCd) : 0;
+  btn.style.setProperty('--cd', (frac * 360).toFixed(0) + 'deg');
+  btn.querySelector('.ab-cd').textContent = left > 0.05 ? Math.ceil(left) : '';
+  btn.classList.toggle('ready', left <= 0.05 && me.alive);
 }
 
 function mySide() {

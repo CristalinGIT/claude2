@@ -155,19 +155,36 @@ export class Renderer {
     return tm;
   }
 
-  // state: { tanks: [{id,x,y,rot,tur,hp,alive,inv,color}], bullets: [{id,x,y,color}] }
-  render(state, myId, dt, time) {
+  // state: { tanks, bullets, walls, mines, zone }; opts: { isAlly(id), laser: {bounces} | null }
+  render(state, myId, dt, time, opts = {}) {
+    const isAlly = opts.isAlly ?? ((id) => id === myId);
     const seen = new Set();
     for (const t of state.tanks) {
       seen.add(t.id);
       const tm = this.tankMesh(t);
-      tm.root.visible = t.alive && !(t.inv && Math.floor(time * 12) % 2 === 0);
+      const ally = t.id === myId || isAlly(t.id);
+      // Невидимый враг не рисуется совсем, невидимый союзник — полупрозрачный.
+      const hiddenEnemy = t.invis && !ally;
+      tm.root.visible = t.alive && !hiddenEnemy && !(t.inv && Math.floor(time * 12) % 2 === 0);
+      setOpacity(tm, t.invis ? 0.3 : 1);
       tm.root.position.set(t.x, 0, t.y);
       tm.body.rotation.y = -t.rot;
       tm.turret.rotation.y = -t.tur;
       tm.ring.visible = t.id === myId;
       tm.ring.rotation.z += dt * 1.5;
-      updatePips(tm, t.hp, t.maxHp ?? CFG_HP, t.shield ?? 0);
+      tm.bubble.visible = (t.shield ?? 0) > 0;
+      tm.bubble.material.opacity = 0.16 + 0.06 * Math.sin(time * 5);
+      updateBar(tm, t.hp, t.maxHp ?? 100);
+
+      // Яд и лёд — облачка частиц вокруг танка.
+      if (t.alive && !hiddenEnemy && (t.poisoned || t.slowed)) {
+        tm.fxT = (tm.fxT ?? 0) - dt;
+        if (tm.fxT <= 0) {
+          tm.fxT = 0.18;
+          if (t.poisoned) this.burst(t.x, t.y, { count: 2, color: 0x7dff4d, speed: 1, size: 0.14, life: 0.5, up: 2 });
+          if (t.slowed) this.burst(t.x, t.y, { count: 2, color: 0xaee8ff, speed: 1, size: 0.14, life: 0.5, up: 1 });
+        }
+      }
     }
     for (const [id, tm] of this.tankMeshes) {
       if (!seen.has(id)) {
@@ -175,6 +192,11 @@ export class Renderer {
         this.tankMeshes.delete(id);
       }
     }
+
+    this.renderWalls(state.walls || []);
+    this.renderMines(state.mines || [], myId, isAlly, time);
+    const me = state.tanks.find((t) => t.id === myId);
+    this.renderLaser(opts.laser && me?.alive ? me : null, opts.laser);
 
     const seenB = new Set();
     for (const b of state.bullets) {
@@ -218,6 +240,87 @@ export class Renderer {
     }
 
     this.renderer.render(this.scene, this.camera);
+  }
+
+  renderWalls(walls) {
+    if (!this.wallMeshes) {
+      this.wallMeshes = new Map();
+      this.wallGeo = new THREE.BoxGeometry(CELL * 0.9, WALL_H * 0.8, CELL * 0.9);
+    }
+    const seen = new Set();
+    for (const [key, hp, max] of walls) {
+      seen.add(key);
+      let m = this.wallMeshes.get(key);
+      if (!m) {
+        m = new THREE.Mesh(this.wallGeo, new THREE.MeshLambertMaterial({ color: 0xc9a46a }));
+        m.castShadow = m.receiveShadow = true;
+        const c = key % MAP.w, r = Math.floor(key / MAP.w);
+        m.position.set((c + 0.5) * CELL, WALL_H * 0.4, (r + 0.5) * CELL);
+        this.wallMeshes.set(key, m);
+        this.scene.add(m);
+      }
+      // Чем меньше прочность, тем темнее и ниже блок.
+      const k = Math.max(0.2, hp / max);
+      m.material.color.setHex(0xc9a46a).multiplyScalar(0.45 + 0.55 * k);
+      m.scale.y = 0.55 + 0.45 * k;
+      m.position.y = WALL_H * 0.4 * m.scale.y;
+    }
+    for (const [key, m] of this.wallMeshes) {
+      if (seen.has(key)) continue;
+      this.scene.remove(m);
+      m.material.dispose();
+      this.wallMeshes.delete(key);
+    }
+  }
+
+  renderMines(mines, myId, isAlly, time) {
+    if (!this.mineMeshes) {
+      this.mineMeshes = new Map();
+      this.mineGeo = new THREE.CylinderGeometry(0.42, 0.5, 0.18, 16);
+    }
+    const seen = new Set();
+    for (const [id, x, y, owner, armed] of mines) {
+      seen.add(id);
+      let m = this.mineMeshes.get(id);
+      if (!m) {
+        m = new THREE.Mesh(this.mineGeo, new THREE.MeshBasicMaterial({ color: this.colorOf?.(owner) ?? 0xff4444, transparent: true }));
+        this.mineMeshes.set(id, m);
+        this.scene.add(m);
+      }
+      m.position.set(x, 0.1, y);
+      // Чужие взведённые мины почти не видны.
+      const ally = owner === myId || isAlly(owner);
+      m.material.opacity = ally ? (armed ? 0.6 + 0.4 * Math.sin(time * 8) : 0.5) : (armed ? 0.14 : 0.5);
+    }
+    for (const [id, m] of this.mineMeshes) {
+      if (seen.has(id)) continue;
+      this.scene.remove(m);
+      m.material.dispose();
+      this.mineMeshes.delete(id);
+    }
+  }
+
+  // Траектория выстрела с рикошетами (карточка «Лазерный прицел»).
+  renderLaser(me, laser) {
+    if (!this.laserLine) {
+      this.laserPts = new Float32Array(3 * 12);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(this.laserPts, 3));
+      this.laserLine = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xff3355, transparent: true, opacity: 0.75 }));
+      this.laserLine.frustumCulled = false;
+      this.scene.add(this.laserLine);
+    }
+    if (!me) { this.laserLine.visible = false; return; }
+    const pts = traceShot(me.x, me.y, me.tur, (laser.bounces ?? 1) + 1, 40);
+    const n = Math.min(pts.length, 12);
+    for (let i = 0; i < n; i++) {
+      this.laserPts[i * 3] = pts[i][0];
+      this.laserPts[i * 3 + 1] = 0.75;
+      this.laserPts[i * 3 + 2] = pts[i][1];
+    }
+    this.laserLine.geometry.setDrawRange(0, n);
+    this.laserLine.geometry.attributes.position.needsUpdate = true;
+    this.laserLine.visible = true;
   }
 
   burst(x, y, { count = 10, color = 0xffaa33, speed = 6, size = 0.25, life = 0.6, up = 4 } = {}) {
@@ -268,6 +371,9 @@ export class Renderer {
     this.bulletMeshes.clear();
     for (const p of this.particles) this.scene.remove(p.mesh);
     this.particles = [];
+    this.renderWalls([]);
+    this.renderMines([], null, () => false, 0);
+    if (this.laserLine) this.laserLine.visible = false;
   }
 }
 
@@ -277,9 +383,9 @@ function buildTank(color) {
   const turret = new THREE.Group();
   root.add(body, turret);
 
-  const main = new THREE.MeshLambertMaterial({ color });
-  const dark = new THREE.MeshLambertMaterial({ color: new THREE.Color(color).multiplyScalar(0.55) });
-  const tracks = new THREE.MeshLambertMaterial({ color: 0x2a2a33 });
+  const main = new THREE.MeshLambertMaterial({ color, transparent: true });
+  const dark = new THREE.MeshLambertMaterial({ color: new THREE.Color(color).multiplyScalar(0.55), transparent: true });
+  const tracks = new THREE.MeshLambertMaterial({ color: 0x2a2a33, transparent: true });
 
   const hull = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.45, 1.05), main);
   hull.position.y = 0.42;
@@ -311,33 +417,68 @@ function buildTank(color) {
   ring.position.y = 0.03;
   root.add(ring);
 
-  // Здоровье — квадратики над танком (строятся в updatePips).
-  const pips = new THREE.Group();
-  pips.position.set(0, 1.55, -0.2);
-  root.add(pips);
+  // Пузырь энергощита.
+  const bubble = new THREE.Mesh(
+    new THREE.SphereGeometry(1.15, 20, 14),
+    new THREE.MeshBasicMaterial({ color: 0x5cc8ff, transparent: true, opacity: 0.2, depthWrite: false }),
+  );
+  bubble.position.y = 0.5;
+  bubble.visible = false;
+  root.add(bubble);
 
-  return { root, body, turret, ring, pips, pipKey: '' };
+  // Полоска здоровья над танком.
+  const bar = new THREE.Group();
+  bar.position.set(0, 1.6, -0.25);
+  const bg = new THREE.Mesh(BAR_GEO, BAR_BG);
+  const fillMat = new THREE.MeshBasicMaterial({ color: 0x6dff7a });
+  const fill = new THREE.Mesh(BAR_FILL_GEO, fillMat);
+  fill.position.set(-BAR_W / 2, 0.01, 0);
+  bar.add(bg, fill);
+  root.add(bar);
+
+  return { root, body, turret, ring, bubble, bar, fill, fillMat, mats: [main, dark, tracks], opacity: 1, barKey: '' };
 }
 
-const CFG_HP = 3;
-const PIP_GEO = new THREE.BoxGeometry(0.3, 0.08, 0.18);
-const PIP_ON = new THREE.MeshBasicMaterial({ color: 0x6dff7a });
-const PIP_OFF = new THREE.MeshBasicMaterial({ color: 0x40404a });
-const PIP_SHIELD = new THREE.MeshBasicMaterial({ color: 0x5cc8ff });
+const BAR_W = 1.4;
+const BAR_GEO = new THREE.BoxGeometry(BAR_W + 0.08, 0.06, 0.22);
+const BAR_FILL_GEO = new THREE.BoxGeometry(BAR_W, 0.07, 0.16).translate(BAR_W / 2, 0, 0);
+const BAR_BG = new THREE.MeshBasicMaterial({ color: 0x24242c });
 
-function updatePips(tm, hp, maxHp, shield) {
-  const key = hp + '/' + maxHp + '/' + shield;
-  if (tm.pipKey === key) return;
-  tm.pipKey = key;
-  tm.pips.clear();
-  const n = maxHp + shield;
-  const step = 0.36;
-  for (let i = 0; i < n; i++) {
-    const mat = i < maxHp ? (i < hp ? PIP_ON : PIP_OFF) : PIP_SHIELD;
-    const p = new THREE.Mesh(PIP_GEO, mat);
-    p.position.x = (i - (n - 1) / 2) * step;
-    tm.pips.add(p);
+function updateBar(tm, hp, maxHp) {
+  const key = hp + '/' + maxHp;
+  if (tm.barKey === key) return;
+  tm.barKey = key;
+  const k = Math.max(0, Math.min(1, hp / maxHp));
+  tm.fill.scale.x = Math.max(0.001, k);
+  tm.fillMat.color.setHex(k > 0.6 ? 0x6dff7a : k > 0.3 ? 0xffd23f : 0xff4d4d);
+  // Бар чуть длиннее у танков с бронёй.
+  tm.bar.scale.x = Math.min(1.6, 0.85 + maxHp / 650);
+}
+
+function setOpacity(tm, o) {
+  if (tm.opacity === o) return;
+  tm.opacity = o;
+  for (const m of tm.mats) m.opacity = o;
+  tm.bar.visible = o > 0.5;
+}
+
+// Трассировка выстрела по статичной карте с отражениями от стен.
+export function traceShot(x, y, angle, segments, maxLen) {
+  let dx = Math.cos(angle), dy = Math.sin(angle);
+  const pts = [[x, y]];
+  let len = 0;
+  const step = 0.1;
+  let seg = 0;
+  while (len < maxLen && seg < segments) {
+    const nx = x + dx * step;
+    if (MAP.solid(Math.floor(nx / CELL), Math.floor(y / CELL))) { dx = -dx; pts.push([x, y]); seg++; continue; }
+    const ny = y + dy * step;
+    if (MAP.solid(Math.floor(nx / CELL), Math.floor(ny / CELL))) { dy = -dy; pts.push([nx, y]); x = nx; seg++; continue; }
+    x = nx; y = ny;
+    len += step;
   }
+  pts.push([x, y]);
+  return pts;
 }
 
 function checkerTexture() {

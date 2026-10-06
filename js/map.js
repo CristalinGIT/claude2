@@ -19,11 +19,21 @@ export const MAP = {
   w: LAYOUT[0].length,
   h: LAYOUT.length,
   rows: LAYOUT,
+  // Построенные игроками стены: ключ клетки (row * w + col) -> { hp, owner, life }.
+  dyn: new Map(),
   solid(col, row) {
+    if (col < 0 || row < 0 || col >= this.w || row >= this.h) return true;
+    return LAYOUT[row][col] === '#' || this.dyn.has(row * this.w + col);
+  },
+  staticSolid(col, row) {
     if (col < 0 || row < 0 || col >= this.w || row >= this.h) return true;
     return LAYOUT[row][col] === '#';
   },
 };
+
+export function cellKey(x, y) {
+  return Math.floor(y / CELL) * MAP.w + Math.floor(x / CELL);
+}
 
 export function isSolid(x, y) {
   return MAP.solid(Math.floor(x / CELL), Math.floor(y / CELL));
@@ -35,7 +45,7 @@ export function emptyCells() {
     empty = [];
     for (let row = 0; row < MAP.h; row++) {
       for (let col = 0; col < MAP.w; col++) {
-        if (!MAP.solid(col, row)) empty.push({ col, row });
+        if (!MAP.staticSolid(col, row)) empty.push({ col, row });
       }
     }
   }

@@ -10,6 +10,7 @@ export function botThink(game, t, dt) {
   b.react = (b.react ?? 0) - dt;
 
   let target = game.tanks.get(b.targetId);
+  if (target && hidden(t, target)) target = null;
   if (b.retarget <= 0 || !target || !target.alive) {
     target = pickTarget(game, t);
     b.targetId = target?.id;
@@ -17,6 +18,8 @@ export function botThink(game, t, dt) {
   }
 
   let mx = 0, my = 0, ax = Math.cos(t.tur), ay = Math.sin(t.tur), fire = false;
+  let wantAbility = false;
+  let danger = false;
 
   if (target) {
     const dx = target.x - t.x, dy = target.y - t.y;
@@ -35,6 +38,10 @@ export function botThink(game, t, dt) {
       const aim = Math.atan2(py - t.y, px - t.x) + (b.aimErr ?? 0);
       ax = Math.cos(aim); ay = Math.sin(aim);
       fire = Math.abs(angleDiff(t.tur, aim)) < 0.15 && dist < 22;
+      // Стену ставим, когда цель рядом и мы ранены; мину — когда враг близко.
+      if (t.s.ability === 'wall' && dist < 12 && t.hp < t.s.maxHp * 0.7) wantAbility = Math.random() < dt * 2;
+      if (t.s.ability === 'mine' && dist < 9) wantAbility = Math.random() < dt * 2;
+      if (t.s.ability === 'invis' && t.hp < t.s.maxHp * 0.5) wantAbility = true;
 
       // Кружим вокруг цели, держа дистанцию.
       if (b.strafeT <= 0) {
@@ -94,7 +101,10 @@ export function botThink(game, t, dt) {
     const side = Math.sign(rx * bl.vy - ry * bl.vx) || 1;
     mx += (bl.vy / sp) * side * 1.5;
     my += (-bl.vx / sp) * side * 1.5;
+    if (d < 3.5) danger = true;
   }
+  // Блинк — чтобы увернуться от пули.
+  if (t.s.ability === 'blink' && danger) wantAbility = Math.random() < 0.5;
 
   // Если застряли — шаг в случайную сторону.
   const moved = Math.hypot(t.vx, t.vy);
@@ -115,12 +125,18 @@ export function botThink(game, t, dt) {
   t.input.mx = mx; t.input.my = my;
   t.input.ax = ax; t.input.ay = ay;
   t.input.fire = fire;
+  if (wantAbility && t.abilityT <= 0) t.input.ability = true;
+}
+
+// Невидимого врага бот не видит, пока тот не подъедет вплотную.
+function hidden(t, o) {
+  return o.invisT > 0 && Math.hypot(o.x - t.x, o.y - t.y) > 3;
 }
 
 function pickTarget(game, t) {
   let best = null, bestD = Infinity;
   for (const o of game.tanks.values()) {
-    if (!o.alive || !game.isEnemy(t, o)) continue;
+    if (!o.alive || !game.isEnemy(t, o) || hidden(t, o)) continue;
     let d = Math.hypot(o.x - t.x, o.y - t.y);
     if (!lineOfSight(t.x, t.y, o.x, o.y)) d += 8;
     if (d < bestD) { bestD = d; best = o; }

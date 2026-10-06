@@ -1,7 +1,7 @@
 // Симуляция игры. Работает только на устройстве хоста.
-import { MAP, CELL, isSolid, emptyCells } from './map.js';
+import { MAP, CELL, isSolid, emptyCells, cellKey } from './map.js';
 import { botThink } from './bot.js';
-import { statsFromCards, rollCards, CARD_BY_ID } from './cards.js';
+import { statsFromCards, rollCards, CARD_BY_ID, ABILITIES, BASE_DAMAGE } from './cards.js';
 
 export const CFG = {
   TANK_R: 0.75,
@@ -20,10 +20,25 @@ export const CFG = {
   ZONE_SHRINK: 30,
   ZONE_MIN: 3,
   ZONE_TICK: 1.5,
+  ZONE_DAMAGE: 20,
+  POISON_DELAY: 1.5,
+  SLOW_TIME: 1.5,
+  BLINK_DIST: 10,
+  WALL_HP: 3,
+  WALL_LIFE: 25,
+  WALLS_PER_TANK: 3,
+  MINE_DAMAGE: 45,
+  MINE_RADIUS: 2.6,
+  MINE_TRIGGER: 1.7,
+  MINES_PER_TANK: 3,
+  RAM_DAMAGE: 25,
 };
 
 // Типы событий, которые уходят клиентам (звук и эффекты).
-export const EV = { SHOT: 1, BOUNCE: 2, HIT: 3, BOOM: 4, CLASH: 5, SPAWN: 6, FIZZLE: 7, SHIELD: 8, HEAL: 9 };
+export const EV = {
+  SHOT: 1, BOUNCE: 2, HIT: 3, BOOM: 4, CLASH: 5, SPAWN: 6, FIZZLE: 7, SHIELD: 8, HEAL: 9,
+  BLINK: 10, WALL: 11, WALL_BREAK: 12, MINE_BOOM: 13, POISON: 14, INVIS: 15, MINE: 16,
+};
 
 export const COLORS = [
   0xff4d4d, 0x4da6ff, 0x5ce65c, 0xffd23f,
@@ -36,13 +51,17 @@ export const TEAM_NAMES = ['Красные', 'Синие', 'Зелёные', 'Ж
 
 export const DEFAULT_SETTINGS = { mode: 'rounds', teams: 0, roundsToWin: 5, killsToWin: 10 };
 
+// Флаги танка в снимке.
+export const TF = { ALIVE: 1, INV: 2, INVIS: 4, POISONED: 8, SLOWED: 16 };
+
 export class Game {
   constructor(settings) {
     this.settings = { ...DEFAULT_SETTINGS, ...settings };
     this.tanks = new Map();
     this.bullets = [];
+    this.mines = [];
     this.events = [];
-    this.nextBulletId = 1;
+    this.nextId = 1;
     this.time = 0;
     this.phase = 'countdown';
     this.phaseT = CFG.COUNTDOWN;
@@ -54,6 +73,7 @@ export class Game {
     this.offers = new Map();     // id танка -> предложенные карты
     this.newOffers = [];         // для рассылки игрокам
     this.zone = 0;
+    MAP.dyn.clear();
   }
 
   get rounds() { return this.settings.mode === 'rounds'; }
@@ -69,9 +89,11 @@ export class Game {
       id, name, color, bot, team,
       x: 0, y: 0, vx: 0, vy: 0, rot: 0, tur: 0,
       cards: [], s: statsFromCards([]),
-      hp: 3, shield: 0, alive: false, respawnT: 0, cd: 0, inv: 0, regenT: 0, zoneT: 0,
+      hp: 100, shield: 0, shieldT: 0, alive: false, respawnT: 0, cd: 0, inv: 0, zoneT: 0,
+      lastHurt: 0, abilityT: 0, invisT: 0, ambushReady: false, slowT: 0, poison: [],
+      lastChanceUsed: false, ramCd: new Map(),
       kills: 0, deaths: 0,
-      input: { mx: 0, my: 0, ax: 0, ay: 0, fire: false },
+      input: { mx: 0, my: 0, ax: 0, ay: 0, fire: false, ability: false },
       brain: bot ? {} : null,
     };
     this.tanks.set(id, t);
@@ -97,18 +119,40 @@ export class Game {
     t.input.ax = clamp(+input.ax || 0, -1, 1);
     t.input.ay = clamp(+input.ay || 0, -1, 1);
     t.input.fire = !!input.fire;
+    // Нажатие способности «защёлкивается» до следующего тика.
+    if (input.ability) t.input.ability = true;
   }
 
   resetTank(t) {
     t.s = statsFromCards(t.cards);
     t.hp = t.s.maxHp;
-    t.shield = t.s.shieldMax;
+    t.shield = t.s.shieldCd ? 1 : 0;
+    t.shieldT = 0;
     t.vx = t.vy = 0;
     t.alive = true;
     t.cd = 0.3;
-    t.regenT = 0;
     t.zoneT = 0;
+    t.lastHurt = -99;
+    t.abilityT = 0;
+    t.invisT = 0;
+    t.slowT = 0;
+    t.poison = [];
+    t.lastChanceUsed = false;
+    t.input.ability = false;
     t.rot = t.tur = Math.atan2(MAP.h * CELL / 2 - t.y, MAP.w * CELL / 2 - t.x);
+  }
+
+  // Тренировка: выставить танку произвольный набор карт прямо в бою.
+  setCards(id, cards) {
+    const t = this.tanks.get(id);
+    if (!t) return;
+    t.cards = cards;
+    t.s = statsFromCards(cards);
+    if (t.alive) {
+      t.hp = t.s.maxHp;
+      t.shield = t.s.shieldCd ? 1 : 0;
+      t.abilityT = 0;
+    }
   }
 
   // Появление в свободной клетке, максимально далёкой от врагов.
@@ -117,6 +161,7 @@ export class Game {
     let best = null;
     let bestScore = -Infinity;
     for (const c of emptyCells()) {
+      if (MAP.dyn.has(c.row * MAP.w + c.col)) continue;
       const x = (c.col + 0.5) * CELL;
       const y = (c.row + 0.5) * CELL;
       let d = 50;
@@ -132,6 +177,8 @@ export class Game {
 
   // Расстановка в начале раунда: команды — в своих углах, остальные — подальше друг от друга.
   placeAll() {
+    MAP.dyn.clear();
+    this.mines = [];
     for (const t of this.tanks.values()) t.alive = false;
     const list = [...this.tanks.values()];
     if (!this.teams) {
@@ -191,13 +238,15 @@ export class Game {
         }
         continue;
       }
-      if (frozen) continue;
+      if (frozen) { t.input.ability = false; continue; }
       if (t.bot) botThink(this, t, dt);
       this.stepTank(t, dt);
     }
     if (!frozen) {
       this.separateTanks();
       this.stepBullets(dt);
+      this.stepMines(dt);
+      this.stepWalls(dt);
     }
 
     if (this.phase === 'fight' && this.rounds) this.checkRoundOver();
@@ -241,24 +290,12 @@ export class Game {
       if (!options.length) continue;
       const offer = { options, picked: null };
       this.offers.set(t.id, offer);
-      if (t.bot) this.pickCard(t.id, options[Math.floor(Math.random() * options.length)]);
+      if (t.bot) this.pickCard(t.id, botPick(options));
       else this.newOffers.push({ id: t.id, options });
     }
     if (!this.offers.size) { this.nextRound(); return; }
     this.phase = 'draft';
     this.phaseT = CFG.DRAFT_TIME;
-  }
-
-  // Тренировка: выставить танку произвольный набор карт прямо в бою.
-  setCards(id, cards) {
-    const t = this.tanks.get(id);
-    if (!t) return;
-    t.cards = cards;
-    t.s = statsFromCards(cards);
-    if (t.alive) {
-      t.hp = t.s.maxHp;
-      t.shield = t.s.shieldMax;
-    }
   }
 
   pickCard(id, cardId) {
@@ -295,12 +332,15 @@ export class Game {
   }
 
   stepTank(t, dt) {
+    const s = t.s;
     const inp = t.input;
     let mx = inp.mx, my = inp.my;
     const m = Math.hypot(mx, my);
     if (m > 1) { mx /= m; my /= m; }
     const px = t.x, py = t.y;
-    const speed = CFG.TANK_SPEED * t.s.speed;
+    t.slowT = Math.max(0, t.slowT - dt);
+    const slowed = t.slowT > 0 || (t.poison.length && t.poison.some((p) => p.neuro));
+    const speed = CFG.TANK_SPEED * s.speed * (slowed ? (t.slowT > 0 ? 0.65 : 0.6) : 1);
     t.x += mx * speed * dt;
     t.y += my * speed * dt;
     resolveWalls(t);
@@ -312,16 +352,33 @@ export class Game {
 
     t.cd -= dt;
     t.inv = Math.max(0, t.inv - dt);
+    t.invisT = Math.max(0, t.invisT - dt);
+    t.abilityT = Math.max(0, t.abilityT - dt);
 
-    if (t.s.regen && t.hp < t.s.maxHp) {
-      t.regenT += dt;
-      if (t.regenT >= t.s.regen) {
-        t.regenT = 0;
-        t.hp++;
-        this.events.push([EV.HEAL, r2(t.x), r2(t.y), t.id]);
+    // Щит восстанавливается после поглощения.
+    if (s.shieldCd && !t.shield) {
+      t.shieldT += dt;
+      if (t.shieldT >= s.shieldCd) { t.shield = 1; t.shieldT = 0; }
+    }
+
+    // Ремкомплект: чинит, если какое-то время не получали урон.
+    if (s.regenRate && t.hp < s.maxHp && this.time - t.lastHurt >= s.regenDelay) {
+      const before = Math.floor(t.hp / 10);
+      t.hp = Math.min(s.maxHp, t.hp + s.regenRate * dt);
+      if (Math.floor(t.hp / 10) !== before) this.events.push([EV.HEAL, r2(t.x), r2(t.y), t.id]);
+    }
+
+    // Отложенный урон от яда.
+    if (t.poison.length) {
+      for (const p of t.poison) {
+        p.t -= dt;
+        if (p.t <= 0) {
+          this.events.push([EV.POISON, r2(t.x), r2(t.y), t.id]);
+          this.damage(t, p.src, p.dmg, { ignoreShield: true });
+          if (!t.alive) return;
+        }
       }
-    } else {
-      t.regenT = 0;
+      t.poison = t.poison.filter((p) => p.t > 0);
     }
 
     // Вне зоны танк получает урон.
@@ -331,7 +388,7 @@ export class Game {
         t.zoneT += dt;
         if (t.zoneT >= CFG.ZONE_TICK) {
           t.zoneT = 0;
-          this.damage(t, null, 1, true);
+          this.damage(t, null, CFG.ZONE_DAMAGE, { ignoreShield: true });
           if (!t.alive) return;
         }
       } else {
@@ -339,36 +396,179 @@ export class Game {
       }
     }
 
-    const canFire = this.phase === 'fight' || this.phase === 'roundEnd';
-    if (inp.fire && t.cd <= 0 && canFire) this.fire(t);
+    const canAct = this.phase === 'fight' || this.phase === 'roundEnd';
+    if (inp.ability) {
+      inp.ability = false;
+      if (canAct && s.ability && t.abilityT <= 0) this.useAbility(t);
+    }
+    if (inp.fire && t.cd <= 0 && canAct) this.fire(t);
   }
 
   fire(t) {
     const s = t.s;
     t.cd = CFG.FIRE_CD * s.cdMul;
     t.inv = 0;
+    // Выстрел из невидимости раскрывает танк; с «Засадой» — двойной урон.
+    let dmgMul = 1;
+    if (t.invisT > 0) {
+      if (s.ambush) dmgMul = 2;
+      t.invisT = 0;
+    }
     const spread = 0.17;
     const off = CFG.TANK_R * 0.6;
+    const barrels = s.twin ? [-0.28, 0.28] : [0];
     for (let i = 0; i < s.shots; i++) {
-      const a = t.tur + (i - (s.shots - 1) / 2) * spread;
+      const a = t.tur + (i - (s.shots - 1) / 2) * spread + (Math.random() - 0.5) * 2 * s.spread;
       const dx = Math.cos(a), dy = Math.sin(a);
-      this.bullets.push({
-        id: this.nextBulletId++,
-        owner: t.id,
-        team: t.team,
-        x: t.x + dx * off, y: t.y + dy * off,
-        vx: dx * CFG.BULLET_SPEED * s.bSpeed, vy: dy * CFG.BULLET_SPEED * s.bSpeed,
-        r: CFG.BULLET_R * s.bSize,
-        dmg: s.damage,
-        maxBounces: s.bounces,
-        homing: s.homing,
-        split: s.split,
-        life: CFG.BULLET_LIFE,
-        bounces: 0,
-      });
+      for (const side of barrels) {
+        // Параллельные стволы смещены поперёк направления стрельбы.
+        const ox = -Math.sin(t.tur) * side, oy = Math.cos(t.tur) * side;
+        this.bullets.push({
+          id: this.nextId++,
+          owner: t.id,
+          team: t.team,
+          x: t.x + dx * off + ox, y: t.y + dy * off + oy,
+          vx: dx * CFG.BULLET_SPEED * s.bSpeed, vy: dy * CFG.BULLET_SPEED * s.bSpeed,
+          r: CFG.BULLET_R * s.bSize,
+          dmg: BASE_DAMAGE * s.damage * dmgMul,
+          maxBounces: s.bounces,
+          homing: s.homing,
+          split: s.split,
+          pierce: s.pierce ? 1 : 0,
+          billiard: s.billiard,
+          poison: s.poison,
+          neuro: s.neuro,
+          ice: s.ice,
+          hit: null,
+          life: CFG.BULLET_LIFE,
+          bounces: 0,
+        });
+      }
     }
     const dx = Math.cos(t.tur), dy = Math.sin(t.tur);
     this.events.push([EV.SHOT, r2(t.x + dx * 1.1), r2(t.y + dy * 1.1), t.id]);
+  }
+
+  // ---------- Способности ----------
+
+  useAbility(t) {
+    const s = t.s;
+    let ok = false;
+    switch (s.ability) {
+      case 'blink': ok = this.blink(t); break;
+      case 'invis':
+        t.invisT = ABILITIES.invis.duration;
+        this.events.push([EV.INVIS, r2(t.x), r2(t.y), t.id]);
+        ok = true;
+        break;
+      case 'wall': ok = this.buildWall(t); break;
+      case 'mine': ok = this.dropMine(t); break;
+    }
+    if (ok) t.abilityT = s.abilityCd;
+  }
+
+  // Прыжок по направлению движения (или башни), можно сквозь стены.
+  blink(t) {
+    let dx = t.input.mx, dy = t.input.my;
+    if (Math.hypot(dx, dy) < 0.2) { dx = Math.cos(t.tur); dy = Math.sin(t.tur); }
+    const d = Math.hypot(dx, dy);
+    dx /= d; dy /= d;
+    for (let dist = CFG.BLINK_DIST; dist >= 1; dist -= 0.25) {
+      const x = t.x + dx * dist, y = t.y + dy * dist;
+      if (!tankFits(x, y)) continue;
+      this.events.push([EV.BLINK, r2(t.x), r2(t.y), t.id]);
+      t.x = x; t.y = y;
+      this.events.push([EV.BLINK, r2(t.x), r2(t.y), t.id]);
+      if (t.s.blinkStrike) {
+        for (const o of this.tanks.values()) {
+          if (!o.alive || !this.isEnemy(t, o)) continue;
+          if (Math.hypot(o.x - x, o.y - y) < 2.6) this.damage(o, t.id, 30);
+        }
+        this.events.push([EV.MINE_BOOM, r2(x), r2(y), t.id]);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  buildWall(t) {
+    const dx = Math.cos(t.tur), dy = Math.sin(t.tur);
+    const hp = t.s.fortress ? 5 : CFG.WALL_HP;
+    // Пробуем клетку прямо перед танком, если занята — чуть дальше.
+    for (const dist of [2.3, 3.2, 4.1]) {
+      const col = Math.floor((t.x + dx * dist) / CELL), row = Math.floor((t.y + dy * dist) / CELL);
+      if (!this.canBuild(col, row)) continue;
+      const cells = [[col, row]];
+      if (t.s.fortress) {
+        // Две дополнительные клетки поперёк направления взгляда.
+        if (Math.abs(dx) > Math.abs(dy)) cells.push([col, row - 1], [col, row + 1]);
+        else cells.push([col - 1, row], [col + 1, row]);
+      }
+      for (const [c, r] of cells) {
+        if (!this.canBuild(c, r)) continue;
+        MAP.dyn.set(r * MAP.w + c, { hp, max: hp, owner: t.id, life: CFG.WALL_LIFE, born: this.time });
+        this.events.push([EV.WALL, r2((c + 0.5) * CELL), r2((r + 0.5) * CELL), t.id]);
+      }
+      // Лимит стен на игрока: старые рассыпаются.
+      const mine = [...MAP.dyn].filter(([, w]) => w.owner === t.id).sort((a, b) => a[1].born - b[1].born);
+      const limit = CFG.WALLS_PER_TANK * (t.s.fortress ? 3 : 1);
+      while (mine.length > limit) this.breakWall(mine.shift()[0]);
+      return true;
+    }
+    return false;
+  }
+
+  // Клетка свободна и на ней нет танков.
+  canBuild(c, r) {
+    if (MAP.solid(c, r)) return false;
+    for (const o of this.tanks.values()) {
+      if (!o.alive) continue;
+      const nx = clamp(o.x, c * CELL, (c + 1) * CELL), ny = clamp(o.y, r * CELL, (r + 1) * CELL);
+      if (Math.hypot(o.x - nx, o.y - ny) < CFG.TANK_R) return false;
+    }
+    return true;
+  }
+
+  breakWall(key) {
+    if (!MAP.dyn.has(key)) return;
+    MAP.dyn.delete(key);
+    const c = key % MAP.w, r = Math.floor(key / MAP.w);
+    this.events.push([EV.WALL_BREAK, r2((c + 0.5) * CELL), r2((r + 0.5) * CELL), 0]);
+  }
+
+  stepWalls(dt) {
+    for (const [key, w] of MAP.dyn) {
+      w.life -= dt;
+      if (w.life <= 0) this.breakWall(key);
+    }
+  }
+
+  dropMine(t) {
+    const dx = Math.cos(t.rot), dy = Math.sin(t.rot);
+    this.mines.push({ id: this.nextId++, owner: t.id, team: t.team, x: t.x - dx * 1.1, y: t.y - dy * 1.1, arm: 0.8 });
+    const mine = this.mines.filter((m) => m.owner === t.id);
+    if (mine.length > CFG.MINES_PER_TANK) this.mines = this.mines.filter((m) => m !== mine[0]);
+    this.events.push([EV.MINE, r2(t.x), r2(t.y), t.id]);
+    return true;
+  }
+
+  stepMines(dt) {
+    for (const m of this.mines) {
+      m.arm -= dt;
+      if (m.arm > 0) continue;
+      const owner = this.tanks.get(m.owner) ?? { id: m.owner, team: m.team };
+      const triggered = [...this.tanks.values()].some((o) =>
+        o.alive && this.isEnemy(owner, o) && Math.hypot(o.x - m.x, o.y - m.y) < CFG.MINE_TRIGGER);
+      if (!triggered) continue;
+      m.dead = true;
+      this.events.push([EV.MINE_BOOM, r2(m.x), r2(m.y), m.owner]);
+      for (const o of this.tanks.values()) {
+        if (!o.alive) continue;
+        if (o.id !== m.owner && !this.isEnemy(owner, o)) continue;
+        if (Math.hypot(o.x - m.x, o.y - m.y) < CFG.MINE_RADIUS) this.damage(o, m.owner, CFG.MINE_DAMAGE);
+      }
+    }
+    this.mines = this.mines.filter((m) => !m.dead);
   }
 
   separateTanks() {
@@ -381,12 +581,25 @@ export class Game {
         let d = Math.hypot(dx, dy);
         if (d >= minD) continue;
         if (d < 1e-4) { dx = 1; dy = 0; d = 1; }
+        this.ram(a, b, dx / d, dy / d);
+        this.ram(b, a, -dx / d, -dy / d);
         const push = (minD - d) / 2;
         a.x -= (dx / d) * push; a.y -= (dy / d) * push;
         b.x += (dx / d) * push; b.y += (dy / d) * push;
         resolveWalls(a); resolveWalls(b);
       }
     }
+  }
+
+  // Таран: урон, если a врезается в b на скорости.
+  ram(a, b, nx, ny) {
+    if (!a.s.ram || !a.alive || !b.alive || !this.isEnemy(a, b)) return;
+    const closing = a.vx * nx + a.vy * ny;
+    if (closing < 4) return;
+    const until = a.ramCd.get(b.id) || 0;
+    if (this.time < until) return;
+    a.ramCd.set(b.id, this.time + 0.8);
+    this.damage(b, a.id, CFG.RAM_DAMAGE);
   }
 
   stepBullets(dt) {
@@ -398,9 +611,9 @@ export class Game {
       if (b.homing) this.steer(b, dt);
       for (let s = 0; s < SUB && !b.dead; s++) {
         b.x += b.vx * h;
-        if (isSolid(b.x, b.y)) { b.x -= b.vx * h; b.vx = -b.vx; this.bounce(b, spawned); }
+        if (isSolid(b.x, b.y)) { this.hitWallCell(b); if (b.dead) break; b.x -= b.vx * h; b.vx = -b.vx; this.bounce(b, spawned); }
         b.y += b.vy * h;
-        if (!b.dead && isSolid(b.x, b.y)) { b.y -= b.vy * h; b.vy = -b.vy; this.bounce(b, spawned); }
+        if (!b.dead && isSolid(b.x, b.y)) { this.hitWallCell(b); if (b.dead) break; b.y -= b.vy * h; b.vy = -b.vy; this.bounce(b, spawned); }
         if (!b.dead) this.bulletHits(b);
       }
       if (b.life <= 0 && !b.dead) {
@@ -425,23 +638,34 @@ export class Game {
     this.bullets = this.bullets.filter((b) => !b.dead).concat(spawned);
   }
 
+  // Пуля попала в построенную стену — стена теряет прочность, пуля гаснет.
+  hitWallCell(b) {
+    const key = cellKey(b.x, b.y);
+    const w = MAP.dyn.get(key);
+    if (!w) return;
+    b.dead = true;
+    w.hp--;
+    this.events.push([EV.FIZZLE, r2(b.x), r2(b.y), 0]);
+    if (w.hp <= 0) this.breakWall(key);
+  }
+
   // Самонаведение: плавно поворачиваем пулю к ближайшему врагу впереди.
   steer(b, dt) {
     const owner = this.tanks.get(b.owner);
-    let best = null, bestD = 9;
+    let best = null, bestD = 11;
     for (const t of this.tanks.values()) {
-      if (!t.alive || t.id === b.owner || (owner && !this.isEnemy(owner, t))) continue;
+      if (!t.alive || t.id === b.owner || t.invisT > 0 || (owner && !this.isEnemy(owner, t))) continue;
       const dx = t.x - b.x, dy = t.y - b.y;
       const d = Math.hypot(dx, dy);
       if (d > bestD) continue;
       const sp = Math.hypot(b.vx, b.vy);
-      if ((dx * b.vx + dy * b.vy) / (d * sp) < 0.2) continue;
+      if ((dx * b.vx + dy * b.vy) / (d * sp) < 0) continue;
       best = t; bestD = d;
     }
     if (!best) return;
     const cur = Math.atan2(b.vy, b.vx);
     const want = Math.atan2(best.y - b.y, best.x - b.x);
-    const a = cur + clamp(angleDiff(cur, want), -1, 1) * Math.min(1, 2.4 * b.homing * dt);
+    const a = cur + clamp(angleDiff(cur, want), -1, 1) * Math.min(1, 3.5 * b.homing * dt);
     const sp = Math.hypot(b.vx, b.vy);
     b.vx = Math.cos(a) * sp;
     b.vy = Math.sin(a) * sp;
@@ -455,12 +679,16 @@ export class Game {
       return;
     }
     this.events.push([EV.BOUNCE, r2(b.x), r2(b.y), 0]);
+    if (b.billiard) {
+      b.dmg *= 1.25;
+      b.vx *= 1.1; b.vy *= 1.1;
+    }
     if (b.split) {
       // Осколки: пуля расходится на две под углом.
       b.split = false;
       const a = Math.atan2(b.vy, b.vx);
       const sp = Math.hypot(b.vx, b.vy);
-      const twin = { ...b, id: this.nextBulletId++, dead: false };
+      const twin = { ...b, id: this.nextId++, dead: false, hit: b.hit ? new Set(b.hit) : null };
       b.vx = Math.cos(a - 0.3) * sp; b.vy = Math.sin(a - 0.3) * sp;
       twin.vx = Math.cos(a + 0.3) * sp; twin.vy = Math.sin(a + 0.3) * sp;
       spawned.push(twin);
@@ -469,7 +697,7 @@ export class Game {
 
   bulletHits(b) {
     for (const t of this.tanks.values()) {
-      if (!t.alive) continue;
+      if (!t.alive || b.hit?.has(t.id)) continue;
       const own = t.id === b.owner;
       // Свою пулю можно словить только после рикошета (и без «Резиновой брони»).
       if (own && (b.bounces === 0 || t.s.selfImmune)) continue;
@@ -478,36 +706,82 @@ export class Game {
       const hitD = CFG.TANK_R + b.r;
       const dx = t.x - b.x, dy = t.y - b.y;
       if (dx * dx + dy * dy > hitD * hitD) continue;
-      b.dead = true;
+
       if (t.inv > 0 || this.phase === 'roundEnd') {
+        b.dead = true;
         this.events.push([EV.FIZZLE, r2(b.x), r2(b.y), 0]);
         return;
       }
-      this.damage(t, b.owner, b.dmg);
+      // Зеркальный щит разворачивает пулю — теперь она принадлежит защитнику.
+      if (t.shield > 0 && t.s.mirror && !own) {
+        t.shield = 0;
+        t.shieldT = 0;
+        b.owner = t.id; b.team = t.team;
+        b.vx = -b.vx; b.vy = -b.vy;
+        b.bounces = 0;
+        b.life = CFG.BULLET_LIFE;
+        b.x = t.x + (b.x - t.x) * 1.4; b.y = t.y + (b.y - t.y) * 1.4;
+        this.events.push([EV.SHIELD, r2(t.x), r2(t.y), t.id]);
+        return;
+      }
+
+      // Бронебойная пуля летит дальше.
+      if (b.pierce > 0 && !own) {
+        b.pierce--;
+        b.hit = b.hit || new Set();
+        b.hit.add(t.id);
+      } else {
+        b.dead = true;
+      }
+      this.applyBulletHit(t, b);
       return;
     }
   }
 
-  damage(t, attackerId, amount, ignoreShield = false) {
+  applyBulletHit(t, b) {
+    if (b.poison) {
+      const now = b.dmg * 0.5;
+      if (this.damage(t, b.owner, now) && t.alive) {
+        t.poison.push({ t: CFG.POISON_DELAY, dmg: b.dmg * 0.45, src: b.owner, neuro: b.neuro });
+      }
+    } else {
+      this.damage(t, b.owner, b.dmg);
+    }
+    if (b.ice && t.alive) t.slowT = CFG.SLOW_TIME;
+  }
+
+  // Возвращает true, если урон прошёл (не поглощён щитом).
+  damage(t, attackerId, amount, { ignoreShield = false } = {}) {
+    if (!t.alive) return false;
     if (t.shield > 0 && !ignoreShield) {
-      t.shield--;
+      t.shield = 0;
+      t.shieldT = 0;
       this.events.push([EV.SHIELD, r2(t.x), r2(t.y), t.id]);
-      return;
+      return false;
     }
     t.hp -= amount;
+    t.lastHurt = this.time;
     this.events.push([EV.HIT, r2(t.x), r2(t.y), t.id]);
 
     const attacker = this.tanks.get(attackerId);
     if (attacker && attacker !== t && attacker.alive && attacker.s.vampire && attacker.hp < attacker.s.maxHp) {
-      attacker.hp++;
+      attacker.hp = Math.min(attacker.s.maxHp, attacker.hp + amount * attacker.s.vampire);
       this.events.push([EV.HEAL, r2(attacker.x), r2(attacker.y), attacker.id]);
     }
 
-    if (t.hp > 0) return;
+    if (t.hp > 0.5) return true;
+    if (t.s.lastChance && !t.lastChanceUsed) {
+      t.lastChanceUsed = true;
+      t.hp = 1;
+      t.inv = 1;
+      this.events.push([EV.SHIELD, r2(t.x), r2(t.y), t.id]);
+      return true;
+    }
     t.hp = 0;
     t.alive = false;
     t.deaths++;
     t.respawnT = CFG.RESPAWN;
+    t.poison = [];
     this.events.push([EV.BOOM, r2(t.x), r2(t.y), t.id]);
     if (attacker && attacker !== t) {
       attacker.kills++;
@@ -515,6 +789,7 @@ export class Game {
       t.kills = Math.max(0, t.kills - 1);
     }
     if (!this.rounds) this.checkFragWin();
+    return true;
   }
 
   checkFragWin() {
@@ -550,19 +825,23 @@ export class Game {
   snapshot() {
     const tanks = [];
     for (const t of this.tanks.values()) {
+      const flags = (t.alive ? TF.ALIVE : 0) | (t.inv > 0 ? TF.INV : 0) | (t.invisT > 0 ? TF.INVIS : 0) |
+        (t.poison.length ? TF.POISONED : 0) | (t.slowT > 0 ? TF.SLOWED : 0);
       tanks.push([
-        t.id, r2(t.x), r2(t.y), r2(t.rot), r2(t.tur), t.hp,
-        (t.alive ? 1 : 0) | (t.inv > 0 ? 2 : 0),
+        t.id, r2(t.x), r2(t.y), r2(t.rot), r2(t.tur), Math.ceil(t.hp), flags,
         t.kills, t.deaths,
         t.alive || this.rounds ? 0 : Math.max(0, Math.ceil(t.respawnT)),
-        t.s.maxHp, t.shield,
+        Math.round(t.s.maxHp), t.shield,
+        Math.round(t.abilityT * 10),
       ]);
     }
     const bullets = this.bullets.map((b) => [b.id, r2(b.x), r2(b.y), b.owner, Math.round(b.r * 100)]);
+    const walls = [...MAP.dyn].map(([k, w]) => [k, w.hp, w.max]);
+    const mines = this.mines.map((m) => [m.id, r2(m.x), r2(m.y), m.owner, m.arm > 0 ? 0 : 1]);
     const waiting = [];
     for (const [id, o] of this.offers) if (!o.picked) waiting.push(id);
     return {
-      tanks, bullets,
+      tanks, bullets, walls, mines,
       phase: this.phase,
       phaseT: Math.max(0, Math.ceil(this.phaseT)),
       round: this.round,
@@ -579,6 +858,28 @@ export class Game {
       id: t.id, name: t.name, color: t.color, bot: t.bot, team: t.team, cards: t.cards,
     }));
   }
+}
+
+// Бот предпочитает эволюции и способности, иначе берёт случайную карту.
+function botPick(options) {
+  const evo = options.find((id) => CARD_BY_ID.get(id)?.kind === 'evo');
+  if (evo) return evo;
+  return options[Math.floor(Math.random() * options.length)];
+}
+
+// Помещается ли танк в точке (не задевает стены).
+export function tankFits(x, y) {
+  const R = CFG.TANK_R;
+  const c0 = Math.floor((x - R) / CELL), c1 = Math.floor((x + R) / CELL);
+  const r0 = Math.floor((y - R) / CELL), r1 = Math.floor((y + R) / CELL);
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      if (!MAP.solid(c, r)) continue;
+      const nx = clamp(x, c * CELL, (c + 1) * CELL), ny = clamp(y, r * CELL, (r + 1) * CELL);
+      if (Math.hypot(x - nx, y - ny) < R) return false;
+    }
+  }
+  return true;
 }
 
 // Выталкивает круг танка из стен.

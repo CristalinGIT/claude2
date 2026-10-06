@@ -24,13 +24,21 @@ export class Input {
     root.addEventListener('touchend', (e) => this.onTouchEnd(e), { passive: false });
     root.addEventListener('touchcancel', (e) => this.onTouchEnd(e), { passive: false });
 
-    window.addEventListener('keydown', (e) => this.keys.add(e.code));
+    this.abilityLatch = false;
+    window.addEventListener('keydown', (e) => {
+      this.keys.add(e.code);
+      if (this.enabled && !e.repeat && ['KeyE', 'ShiftLeft', 'ShiftRight', 'Space'].includes(e.code)) this.abilityLatch = true;
+    });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => { this.keys.clear(); this.mouse.down = false; });
     root.addEventListener('mousemove', (e) => {
       this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.active = true;
     });
-    root.addEventListener('mousedown', (e) => { if (e.button === 0) this.mouse.down = true; });
+    root.addEventListener('mousedown', (e) => {
+      if (e.target.closest('button, .overlay')) return;
+      if (e.button === 0) this.mouse.down = true;
+      if (e.button === 2) this.abilityLatch = true;
+    });
     window.addEventListener('mouseup', () => { this.mouse.down = false; });
     root.addEventListener('contextmenu', (e) => e.preventDefault());
   }
@@ -117,9 +125,11 @@ export class Input {
     } else if (this.mouse.active) {
       const dir = this.aimFromMouse(this.mouse.x, this.mouse.y);
       if (dir) { ax = dir.x; ay = dir.y; }
-      fire = this.mouse.down || this.keys.has('Space');
+      fire = this.mouse.down;
     }
-    return { mx: r2(mx), my: r2(my), ax: r2(ax), ay: r2(ay), fire };
+    const ability = this.abilityLatch;
+    this.abilityLatch = false;
+    return { mx: r2(mx), my: r2(my), ax: r2(ax), ay: r2(ay), fire, ability };
   }
 
   reset() {

@@ -397,3 +397,39 @@ button.ghost { background: transparent; color: var(--muted); }
 .cat-item .cnt-ctl { grid-column: 3; grid-row: 1 / span 2; display: flex; align-items: center; gap: 4px; }
 .cat-item .cnt-ctl button { width: 30px; height: 30px; padding: 0; font-size: 16px; }
 .cat-item .cnt-ctl em { font-style: normal; min-width: 30px; text-align: center; color: var(--accent); font-size: 13px; }
+
+/* ---------- Способность и значки карт ---------- */
+
+#btn-ability {
+  --cd: 0deg;
+  position: absolute;
+  right: max(196px, calc(env(safe-area-inset-right) + 196px));
+  bottom: 70px;
+  width: 66px;
+  height: 66px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background:
+    conic-gradient(rgba(10, 12, 24, 0.75) var(--cd), transparent 0),
+    rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  touch-action: none;
+}
+#btn-ability.ready { border-color: var(--accent); box-shadow: 0 0 14px rgba(255, 210, 63, 0.55); }
+#btn-ability .ab-icon { font-size: 28px; }
+#btn-ability .ab-cd { position: absolute; font-weight: 800; font-size: 18px; text-shadow: 0 1px 3px #000; }
+
+.badge { display: inline-block; font-style: normal; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 6px; margin-left: 6px; vertical-align: middle; }
+.badge.evo { background: #ffd23f; color: #1a1d2e; }
+.badge.ab { background: #8c6bff; color: #fff; }
+.card .badge { margin: 0 0 2px; }
+.card.kind-evo { border-color: #8a7420; }
+.card.kind-ability { border-color: #5a4aa8; }
+.card small.warn { color: #ff8c8c; }
+.cat-item.kind-evo { border-color: #6b5c1f; }
+.cat-item.kind-ability { border-color: #4a3d8a; }
+.cat-item .desc i { color: #d9b84a; font-style: normal; }
