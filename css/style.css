@@ -365,7 +365,7 @@ button.ghost { background: transparent; color: var(--muted); }
 
 /* ---------- Справочник карточек ---------- */
 
-#catalog {
+#catalog, #players-tab, #settings {
   position: fixed;
   inset: 0;
   z-index: 15;
@@ -433,3 +433,19 @@ button.ghost { background: transparent; color: var(--muted); }
 .cat-item.kind-evo { border-color: #6b5c1f; }
 .cat-item.kind-ability { border-color: #4a3d8a; }
 .cat-item .desc i { color: #d9b84a; font-style: normal; }
+
+/* ---------- Настройки и усиления игроков ---------- */
+
+.settings-box { max-width: 420px; text-align: left; }
+.catalog-head .close-overlay { width: 36px; height: 36px; padding: 0; border-radius: 50%; }
+#players-list { display: flex; flex-direction: column; gap: 8px; }
+.pl-row { background: var(--bg); border: 1px solid var(--line); border-left-width: 4px; border-radius: 12px; padding: 8px 10px; }
+.pl-row.me { background: #2b3050; }
+.pl-name { display: flex; align-items: center; font-weight: 700; margin-bottom: 6px; }
+.pl-name small { color: var(--muted); font-weight: normal; margin-left: 8px; }
+.pl-cards { display: flex; flex-wrap: wrap; gap: 5px; }
+.pl-card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 2px 8px; font-size: 13px; white-space: nowrap; }
+.pl-card.ability { border-color: #5a4aa8; }
+.pl-card.evo { border-color: #8a7420; }
+.pl-card b { color: var(--accent); }
+.pl-none { color: var(--muted); font-size: 13px; }

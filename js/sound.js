@@ -2,6 +2,12 @@
 let ctx = null;
 let master = null;
 let noiseBuf = null;
+let muted = false;
+
+export function setMuted(m) {
+  muted = m;
+  if (master) master.gain.value = m ? 0 : 0.35;
+}
 
 export function unlockAudio() {
   if (!ctx) {
@@ -9,7 +15,7 @@ export function unlockAudio() {
     if (!AC) return;
     ctx = new AC();
     master = ctx.createGain();
-    master.gain.value = 0.35;
+    master.gain.value = muted ? 0 : 0.35;
     master.connect(ctx.destination);
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0);

@@ -32,6 +32,7 @@
         <button id="btn-solo" class="ghost">Тренировка с ботами</button>
         <button class="ghost btn-catalog">📖 Все карточки</button>
       </div>
+      <button class="ghost btn-settings">⚙ Настройки</button>
       <p id="status"></p>
       <details class="help">
         <summary>Как играть</summary>
@@ -84,7 +85,8 @@
           <button id="btn-start" class="big primary">Начать бой</button>
           <p id="client-wait" class="muted">Ждём, пока хост начнёт…</p>
           <div class="row">
-            <button class="ghost btn-catalog">📖 Все карточки</button>
+            <button class="ghost btn-catalog">📖 Карточки</button>
+            <button class="ghost btn-settings">⚙ Настройки</button>
             <button id="btn-leave" class="ghost">Выйти</button>
           </div>
         </div>
@@ -97,7 +99,9 @@
     <div id="damage"></div>
     <div id="hud">
       <button id="btn-exit" class="hud-btn" aria-label="Выйти">✕</button>
+      <button class="hud-btn btn-players" aria-label="Усиления игроков">👥</button>
       <button class="hud-btn btn-catalog" aria-label="Карточки">📖</button>
+      <button class="hud-btn btn-settings" aria-label="Настройки">⚙</button>
       <div id="scoreboard"></div>
       <div class="hud-right">
         <div id="hud-code"></div>
@@ -114,6 +118,7 @@
         <div class="timer"><div id="draft-bar"></div></div>
         <p id="draft-wait" class="muted"></p>
         <p id="my-cards" class="muted"></p>
+        <button class="ghost btn-players">👥 Усиления игроков</button>
       </div>
     </div>
     <div id="end" class="overlay hidden">
@@ -140,6 +145,41 @@
       </div>
       <p id="catalog-sub" class="muted"></p>
       <div id="catalog-list"></div>
+    </div>
+  </div>
+
+  <div id="players-tab" class="overlay hidden">
+    <div class="draft-box catalog-box">
+      <div class="catalog-head">
+        <h2>Усиления игроков</h2>
+        <button class="close-overlay" aria-label="Закрыть">✕</button>
+      </div>
+      <div id="players-list"></div>
+    </div>
+  </div>
+
+  <div id="settings" class="overlay hidden">
+    <div class="draft-box settings-box">
+      <div class="catalog-head">
+        <h2>Настройки</h2>
+        <button class="close-overlay" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="setting">
+        <span>Джойстики</span>
+        <div class="seg" id="opt-sticks">
+          <button data-v="fixed">Фиксированные</button>
+          <button data-v="float">Плавающие</button>
+        </div>
+        <p class="hint" id="opt-sticks-hint"></p>
+      </div>
+      <div class="setting">
+        <span>Звук</span>
+        <div class="seg" id="opt-sound">
+          <button data-v="on">Включён</button>
+          <button data-v="off">Выключен</button>
+        </div>
+      </div>
+      <p class="hint">Версия игры: <b id="app-version"></b></p>
     </div>
   </div>
 

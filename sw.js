@@ -1,5 +1,5 @@
 // Кэш для работы без интернета: после первого открытия игра грузится из памяти телефона.
-const VERSION = 'tankhaos-v7';
+const VERSION = 'tankhaos-v8';
 const FILES = [
   './',
   'index.html',
@@ -38,7 +38,8 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   e.respondWith(
-    fetch(req)
+    // no-cache: всегда сверяемся с сервером, чтобы обновления доходили сразу.
+    fetch(req, { cache: 'no-cache' })
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();

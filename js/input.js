@@ -25,6 +25,7 @@ export class Input {
     root.addEventListener('touchcancel', (e) => this.onTouchEnd(e), { passive: false });
 
     this.abilityLatch = false;
+    this.fixed = false;
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
       if (this.enabled && !e.repeat && ['KeyE', 'ShiftLeft', 'ShiftRight', 'Space'].includes(e.code)) this.abilityLatch = true;
@@ -54,10 +55,39 @@ export class Input {
       const stick = t.clientX < window.innerWidth / 2 ? this.move : this.aim;
       if (stick.id !== null) continue;
       stick.id = t.identifier;
-      stick.ox = t.clientX; stick.oy = t.clientY;
-      stick.x = stick.y = 0;
-      showStick(stick, t.clientX, t.clientY);
+      if (this.fixed) {
+        // Фиксированный стик стоит на месте — палец просто отклоняет его.
+        const [rx, ry] = this.restPos(stick);
+        stick.ox = rx; stick.oy = ry;
+        this.moveStick(stick, t.clientX, t.clientY);
+      } else {
+        stick.ox = t.clientX; stick.oy = t.clientY;
+        stick.x = stick.y = 0;
+        showStick(stick, t.clientX, t.clientY);
+      }
     }
+  }
+
+  moveStick(stick, px, py) {
+    let dx = px - stick.ox, dy = py - stick.oy;
+    const d = Math.hypot(dx, dy);
+    if (d > STICK_R) {
+      if (this.fixed) {
+        dx *= STICK_R / d; dy *= STICK_R / d;
+      } else {
+        // Плавающий стик «тянется» за пальцем, если тот ушёл далеко.
+        stick.ox += (dx / d) * (d - STICK_R);
+        stick.oy += (dy / d) * (d - STICK_R);
+        dx = px - stick.ox; dy = py - stick.oy;
+      }
+    }
+    stick.x = dx / STICK_R; stick.y = dy / STICK_R;
+    showStick(stick, stick.ox, stick.oy);
+  }
+
+  restPos(stick) {
+    const left = stick === this.move;
+    return [left ? REST_X : window.innerWidth - REST_X, window.innerHeight - REST_Y];
   }
 
   onTouchMove(e) {
@@ -66,16 +96,7 @@ export class Input {
     for (const t of e.changedTouches) {
       for (const stick of [this.move, this.aim]) {
         if (stick.id !== t.identifier) continue;
-        let dx = t.clientX - stick.ox, dy = t.clientY - stick.oy;
-        const d = Math.hypot(dx, dy);
-        // Стик «тянется» за пальцем, если тот ушёл далеко.
-        if (d > STICK_R) {
-          stick.ox += (dx / d) * (d - STICK_R);
-          stick.oy += (dy / d) * (d - STICK_R);
-          dx = t.clientX - stick.ox; dy = t.clientY - stick.oy;
-        }
-        stick.x = dx / STICK_R; stick.y = dy / STICK_R;
-        showStick(stick, stick.ox, stick.oy);
+        this.moveStick(stick, t.clientX, t.clientY);
       }
     }
   }
@@ -94,9 +115,7 @@ export class Input {
   // Стик в покое — полупрозрачный в своём углу, чтобы было видно, где зона управления.
   rest(stick) {
     if (!this.touchUi || !this.enabled) { stick.el.style.display = 'none'; return; }
-    const left = stick === this.move;
-    const x = left ? REST_X : window.innerWidth - REST_X;
-    const y = window.innerHeight - REST_Y;
+    const [x, y] = this.restPos(stick);
     stick.x = stick.y = 0;
     showStick(stick, x, y);
     stick.el.classList.add('resting');

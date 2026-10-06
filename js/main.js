@@ -5,7 +5,9 @@ import { CARDS, CARD_BY_ID, ABILITIES, statsFromCards } from './cards.js';
 import { hostRoom, joinRoom } from './net.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
-import { sfx, unlockAudio } from './sound.js';
+import { sfx, unlockAudio, setMuted } from './sound.js';
+
+const APP_VERSION = '8';
 
 const MAX_HUMANS = 8;
 const MAX_TANKS = 12;
@@ -95,6 +97,22 @@ function initMenu() {
   });
 
   for (const b of document.querySelectorAll('.btn-catalog')) b.addEventListener('click', openCatalog);
+  for (const b of document.querySelectorAll('.btn-players')) b.addEventListener('click', openPlayersTab);
+  for (const b of document.querySelectorAll('.btn-settings')) b.addEventListener('click', openSettings);
+  for (const b of document.querySelectorAll('.close-overlay')) {
+    b.addEventListener('click', () => b.closest('.overlay').classList.add('hidden'));
+  }
+  for (const id of ['#players-tab', '#settings']) {
+    $(id).addEventListener('click', (e) => { if (e.target.id === id.slice(1)) e.target.classList.add('hidden'); });
+  }
+  $('#opt-sticks').addEventListener('click', (e) => {
+    const v = e.target.closest('button')?.dataset.v;
+    if (v) saveOptions({ fixedSticks: v === 'fixed' });
+  });
+  $('#opt-sound').addEventListener('click', (e) => {
+    const v = e.target.closest('button')?.dataset.v;
+    if (v) saveOptions({ muted: v === 'off' });
+  });
   $('#catalog-close').addEventListener('click', () => $('#catalog').classList.add('hidden'));
   $('#catalog').addEventListener('click', (e) => {
     if (e.target.id === 'catalog') $('#catalog').classList.add('hidden');
@@ -567,6 +585,82 @@ function replaceNote(c, mine) {
   return `<small class="warn">заменит «${ABILITIES[cur].name}»</small>`;
 }
 
+// ---------- Настройки игрока ----------
+
+const options = { fixedSticks: true, muted: false };
+
+function loadOptions() {
+  try { Object.assign(options, JSON.parse(localStorage.getItem('tank-options') || '{}')); } catch {}
+  applyOptions();
+}
+
+function saveOptions(patch) {
+  Object.assign(options, patch);
+  try { localStorage.setItem('tank-options', JSON.stringify(options)); } catch {}
+  applyOptions();
+  renderSettings();
+}
+
+function applyOptions() {
+  setMuted(options.muted);
+  if (input) {
+    input.fixed = options.fixedSticks;
+    input.reset();
+  }
+}
+
+function openSettings() {
+  renderSettings();
+  $('#settings').classList.remove('hidden');
+}
+
+function renderSettings() {
+  for (const b of document.querySelectorAll('#opt-sticks button')) {
+    b.classList.toggle('on', (b.dataset.v === 'fixed') === options.fixedSticks);
+  }
+  for (const b of document.querySelectorAll('#opt-sound button')) {
+    b.classList.toggle('on', (b.dataset.v === 'off') === options.muted);
+  }
+  $('#opt-sticks-hint').textContent = options.fixedSticks
+    ? 'Стики стоят на месте в нижних углах — палец только отклоняет их.'
+    : 'Стик появляется там, где вы коснулись экрана, и тянется за пальцем.';
+  $('#app-version').textContent = APP_VERSION;
+}
+
+// ---------- Усиления игроков ----------
+
+function openPlayersTab() {
+  renderPlayersTab();
+  $('#players-tab').classList.remove('hidden');
+}
+
+function renderPlayersTab() {
+  const list = [...app.roster.values()].sort((a, b) => (a.team - b.team) || (a.id - b.id));
+  if (!list.length) {
+    $('#players-list').innerHTML = '<p class="pl-none">Игра ещё не началась.</p>';
+    return;
+  }
+  $('#players-list').innerHTML = list.map((p) => {
+    const counts = new Map();
+    for (const id of p.cards || []) counts.set(id, (counts.get(id) || 0) + 1);
+    const ability = statsFromCards(p.cards || []).ability;
+    // Сначала текущая способность, потом остальные карты.
+    const items = [...counts].sort((a, b) => (b[0] === ability) - (a[0] === ability)).map(([id, n]) => {
+      const c = CARD_BY_ID.get(id);
+      if (!c) return '';
+      // Заменённая способность больше не действует — не показываем её.
+      if (c.kind === 'ability' && id !== ability) return '';
+      const cls = c.kind === 'ability' ? ' ability' : c.kind === 'evo' ? ' evo' : '';
+      return `<span class="pl-card${cls}" title="${escapeHtml(c.desc)}">${c.icon} ${c.name}${n > 1 ? ` <b>×${n}</b>` : ''}</span>`;
+    }).join('');
+    const team = app.settings.teams ? `<small>${TEAM_NAMES[p.team]}</small>` : '';
+    return `<div class="pl-row${p.id === app.myId ? ' me' : ''}" style="border-left-color:${hex(p.color)}">` +
+      `<div class="pl-name"><span class="dot" style="background:${hex(p.color)}"></span>${escapeHtml(p.name)}` +
+      `${p.bot ? ' 🤖' : ''}${p.id === app.myId ? ' (вы)' : ''}${team}</div>` +
+      `<div class="pl-cards">${items || '<span class="pl-none">Пока без усилений</span>'}</div></div>`;
+  }).join('');
+}
+
 // ---------- Справочник карточек ----------
 
 // В тренировке (без сети) карточки можно выдавать себе прямо из справочника.
@@ -622,6 +716,7 @@ function cardIcons(ids) {
 
 function setRoster(players) {
   app.roster = new Map(players.map((p) => [p.id, p]));
+  if (!$('#players-tab').classList.contains('hidden')) renderPlayersTab();
 }
 
 function handleEvents(events) {
@@ -700,6 +795,7 @@ function handleEvents(events) {
 function enterLobby() {
   show('lobby');
   $('#catalog').classList.add('hidden');
+  $('#players-tab').classList.add('hidden');
   app.inGame = false;
   app.myOffer = null;
   input?.setEnabled(false);
@@ -784,6 +880,7 @@ function enterGame() {
       aimFromMouse: (px, py) => renderer.aimDirection(px, py, app.myView),
     });
     window.addEventListener('resize', () => input.reset());
+    applyOptions();
   }
   renderer.clear();
   renderer.resize();
@@ -998,6 +1095,7 @@ function escapeHtml(s) { return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0
 window.tankApp = app;
 
 initMenu();
+loadOptions();
 show('menu');
 requestAnimationFrame(frame);
 
