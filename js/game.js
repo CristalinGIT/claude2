@@ -715,7 +715,7 @@ export class Game {
   // Самонаведение: плавно поворачиваем пулю к ближайшему врагу впереди.
   steer(b, dt) {
     const owner = this.tanks.get(b.owner);
-    let best = null, bestD = 11;
+    let best = null, bestD = 9;
     for (const t of this.tanks.values()) {
       if (!t.alive || t.id === b.owner || t.invisT > 0 || (owner && !this.isEnemy(owner, t))) continue;
       const dx = t.x - b.x, dy = t.y - b.y;
@@ -728,7 +728,7 @@ export class Game {
     if (!best) return;
     const cur = Math.atan2(b.vy, b.vx);
     const want = Math.atan2(best.y - b.y, best.x - b.x);
-    const a = cur + clamp(angleDiff(cur, want), -1, 1) * Math.min(1, 3.5 * b.homing * dt);
+    const a = cur + clamp(angleDiff(cur, want), -1, 1) * Math.min(1, 2.6 * b.homing * dt);
     const sp = Math.hypot(b.vx, b.vy);
     b.vx = Math.cos(a) * sp;
     b.vy = Math.sin(a) * sp;

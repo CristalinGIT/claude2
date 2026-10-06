@@ -87,7 +87,7 @@ export const CARDS = [
     apply: (s) => { s.twin = true; s.damage *= 0.75; s.cdMul *= 1.15; } },
   { id: 'burst', kind: 'stat', icon: '⏩', name: 'Очередь', desc: '+1 пуля вслед за первой. Урон каждой −25%, перезарядка +10%, пули разлетаются шире', max: 2,
     apply: (s) => { s.burst += 1; s.damage *= s.burst === 2 ? 0.75 : 0.85; s.cdMul *= 1.1; s.spread += 0.06; } },
-  { id: 'homing', kind: 'stat', icon: '🎯', name: 'Самонаведение', desc: 'Пули заметно доворачивают к врагу. Урон −10%, дальность −25%', max: 2,
+  { id: 'homing', kind: 'stat', icon: '🎯', name: 'Самонаведение', desc: 'Пули доворачивают к врагу. Урон −10%, дальность −25%', max: 2,
     apply: (s) => { s.homing += 1; s.damage *= 0.9; s.bLife *= 0.75; } },
   { id: 'poison', kind: 'stat', icon: '☠️', name: 'Отравляющая пуля', desc: 'Попадание: половина урона сразу и ещё 45% через 1.5 с', max: 1,
     apply: (s) => { s.poison = true; } },
@@ -147,9 +147,9 @@ export const CARDS = [
     apply: ability('mine') },
 
   // ---- Эволюции ----
-  { id: 'machinegun', kind: 'evo', icon: '🔫', name: 'Пулемёт', desc: 'Очень быстрая стрельба. Урон −35%, разброс, мелкие пули, танк на 10% медленнее',
+  { id: 'machinegun', kind: 'evo', icon: '🔫', name: 'Пулемёт', desc: 'Очень быстрая стрельба. Урон −50%, разброс, мелкие пули, танк на 10% медленнее',
     max: 1, needs: 'Дробовик', reqId: 'shotgun',
-    apply: (s) => { s.cdMul *= 0.5; s.damage *= 0.65; s.bSize *= 0.8; s.spread += 0.12; s.speed *= 0.9; } },
+    apply: (s) => { s.cdMul *= 0.5; s.damage *= 0.5; s.bSize *= 0.8; s.spread += 0.12; s.speed *= 0.9; } },
   { id: 'billiard', kind: 'evo', icon: '🎱', name: 'Бильярд', desc: 'Каждый рикошет: урон пули +25% и скорость +10%',
     max: 1, needs: 'Рикошет ×2', reqId: 'ricochet', reqN: 2,
     apply: (s) => { s.billiard = true; } },

@@ -9,7 +9,7 @@ import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { sfx, unlockAudio, setMuted } from './sound.js';
 
-const APP_VERSION = '13';
+const APP_VERSION = '14';
 
 const MAX_HUMANS = 8;
 const MAX_TANKS = 12;
