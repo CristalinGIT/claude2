@@ -9,7 +9,7 @@ import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { sfx, unlockAudio, setMuted } from './sound.js';
 
-const APP_VERSION = '14';
+const APP_VERSION = '15';
 
 const MAX_HUMANS = 8;
 const MAX_TANKS = 12;
@@ -1169,7 +1169,7 @@ function updateHud(view) {
     msg = w == null ? 'Ничья!' : (w === my ? 'Раунд ваш! 🎉' : `Раунд за: ${sideName(w, app.roster)}`);
     big = true;
   } else if (view.phase === 'fight' && me && !me.alive) {
-    msg = rounds ? 'Вы подбиты — ждём конца раунда' : `Подбит! Возрождение через ${Math.max(1, me.respawn)}…`;
+    msg = rounds && !me.respawn ? 'Вы подбиты — ждём конца раунда' : `Подбит! Возрождение через ${Math.max(1, me.respawn)}…`;
   } else if (view.phase === 'fight' && view.zone > 0 && me?.alive) {
     msg = '⚠ Зона сужается — к центру!';
   }

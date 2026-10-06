@@ -130,7 +130,7 @@ export class Game {
   // Характеристики с учётом настроек матча (базовое число рикошетов).
   statsFor(cards) {
     const s = statsFromCards(cards);
-    s.bounces += (this.settings.bounces ?? 1) - 1;
+    s.bounces = Math.max(0, s.bounces + (this.settings.bounces ?? 1) - 1);
     return s;
   }
 
@@ -149,6 +149,8 @@ export class Game {
     t.slowT = 0;
     t.poison = [];
     t.lastChanceUsed = false;
+    t.phoenixUsed = false;
+    t.phoenixPending = false;
     t.burst = [];
     t.adrenT = 0;
     t.regenT = 0;
@@ -246,9 +248,15 @@ export class Game {
     const frozen = this.phase === 'countdown' || this.phase === 'draft';
     for (const t of this.tanks.values()) {
       if (!t.alive) {
-        if (!this.rounds) {
+        if (!this.rounds || t.phoenixPending) {
           t.respawnT -= dt;
-          if (t.respawnT <= 0) this.spawn(t);
+          if (t.respawnT <= 0) {
+            const used = t.phoenixUsed;
+            this.spawn(t);
+            t.phoenixUsed = used;
+            t.phoenixPending = false;
+            if (t.s.phoenix) t.inv = 0.5;
+          }
         }
         continue;
       }
@@ -276,7 +284,8 @@ export class Game {
 
   checkRoundOver() {
     const sides = new Set();
-    for (const t of this.tanks.values()) if (t.alive) sides.add(this.sideOf(t));
+    // Танк, ждущий возрождения «Феникса», ещё в игре.
+    for (const t of this.tanks.values()) if (t.alive || t.phoenixPending) sides.add(this.sideOf(t));
     if (sides.size > 1) return;
     const winner = sides.size === 1 ? [...sides][0] : null;
     this.roundWinner = winner;
@@ -805,9 +814,9 @@ export class Game {
 
   applyBulletHit(t, b) {
     if (b.poison) {
-      const now = b.dmg * 0.5;
-      if (this.damage(t, b.owner, now) && t.alive) {
-        t.poison.push({ t: CFG.POISON_DELAY, dmg: b.dmg * 0.45, src: b.owner, neuro: b.neuro });
+      // Ослабленный удар сразу + яд через POISON_DELAY.
+      if (this.damage(t, b.owner, b.dmg * 0.7) && t.alive) {
+        t.poison.push({ t: CFG.POISON_DELAY, dmg: b.dmg * 0.4, src: b.owner, neuro: b.neuro });
       }
     } else {
       this.damage(t, b.owner, b.dmg);
@@ -847,7 +856,12 @@ export class Game {
     t.hp = 0;
     t.alive = false;
     t.deaths++;
-    t.respawnT = CFG.RESPAWN;
+    t.respawnT = t.s.phoenix ? 2 : CFG.RESPAWN;
+    // «Феникс» в раундах: одно возрождение за раунд.
+    if (this.rounds && t.s.phoenix && !t.phoenixUsed) {
+      t.phoenixUsed = true;
+      t.phoenixPending = true;
+    }
     t.poison = [];
     this.events.push([EV.BOOM, r2(t.x), r2(t.y), t.id]);
     if (attacker && attacker !== t) {
@@ -897,7 +911,7 @@ export class Game {
       tanks.push([
         t.id, r2(t.x), r2(t.y), r2(t.rot), r2(t.tur), Math.ceil(t.hp), flags,
         t.kills, t.deaths,
-        t.alive || this.rounds ? 0 : Math.max(0, Math.ceil(t.respawnT)),
+        t.alive || (this.rounds && !t.phoenixPending) ? 0 : Math.max(0, Math.ceil(t.respawnT)),
         Math.round(t.s.maxHp), t.shield,
         Math.round(t.abilityTs[0] * 10), Math.round(t.abilityTs[1] * 10),
       ]);
