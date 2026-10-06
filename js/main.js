@@ -4,11 +4,12 @@ import {
 import { CARDS, CARD_BY_ID, ABILITIES, statsFromCards } from './cards.js';
 import { hostRoom, joinRoom } from './net.js';
 import { MAP, MAPS, MAP_BY_ID, setMap } from './map.js';
+import { LAYOUT_ITEMS, DEFAULT_LAYOUT, MIN_SCALE, MAX_SCALE, loadLayout, saveLayout, itemPx } from './layout.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { sfx, unlockAudio, setMuted } from './sound.js';
 
-const APP_VERSION = '9';
+const APP_VERSION = '10';
 
 const MAX_HUMANS = 8;
 const MAX_TANKS = 12;
@@ -112,6 +113,8 @@ function initMenu() {
     const v = e.target.closest('button')?.dataset.v;
     if (v) saveOptions({ fixedSticks: v === 'fixed' });
   });
+  $('#btn-layout').addEventListener('click', openLayoutEditor);
+  initLayoutEditor();
   $('#opt-sound').addEventListener('click', (e) => {
     const v = e.target.closest('button')?.dataset.v;
     if (v) saveOptions({ muted: v === 'off' });
@@ -650,6 +653,83 @@ function renderSettings() {
   $('#app-version').textContent = APP_VERSION;
 }
 
+// ---------- Раскладка управления ----------
+
+let layout = loadLayout();
+let leSel = 'move';
+
+function applyLayout() {
+  input?.setLayout(layout);
+  // Кнопки способностей ставим по раскладке.
+  for (const [key, sel] of [['ab1', '#btn-ability'], ['ab2', '#btn-ability2']]) {
+    const { x, y, size } = itemPx(layout, key);
+    Object.assign($(sel).style, {
+      left: x + 'px', top: y + 'px', right: 'auto', bottom: 'auto',
+      width: size + 'px', height: size + 'px', margin: `${-size / 2}px 0 0 ${-size / 2}px`,
+      fontSize: (size / 66) + 'em',
+    });
+  }
+}
+
+function openLayoutEditor() {
+  $('#settings').classList.add('hidden');
+  $('#layout-editor').classList.remove('hidden');
+  renderLayoutEditor();
+}
+
+function renderLayoutEditor() {
+  for (const el of document.querySelectorAll('.le-item')) {
+    const k = el.dataset.k;
+    const { x, y, size } = itemPx(layout, k);
+    Object.assign(el.style, { left: x + 'px', top: y + 'px', width: size + 'px', height: size + 'px' });
+    el.classList.toggle('sel', k === leSel);
+  }
+  $('#le-sel').textContent = LAYOUT_ITEMS[leSel].label;
+  $('#le-scale').value = Math.round(layout[leSel].s * 100);
+}
+
+function initLayoutEditor() {
+  $('#le-scale').min = MIN_SCALE * 100;
+  $('#le-scale').max = MAX_SCALE * 100;
+  let drag = null;
+  for (const el of document.querySelectorAll('.le-item')) {
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      leSel = el.dataset.k;
+      const { x, y } = itemPx(layout, leSel);
+      drag = { id: e.pointerId, dx: e.clientX - x, dy: e.clientY - y };
+      el.setPointerCapture(e.pointerId);
+      renderLayoutEditor();
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!drag || drag.id !== e.pointerId) return;
+      layout[leSel].x = Math.min(1, Math.max(0, (e.clientX - drag.dx) / window.innerWidth));
+      layout[leSel].y = Math.min(1, Math.max(0, (e.clientY - drag.dy) / window.innerHeight));
+      renderLayoutEditor();
+    });
+    const end = () => { drag = null; };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+  }
+  $('#le-scale').addEventListener('input', (e) => {
+    layout[leSel].s = +e.target.value / 100;
+    renderLayoutEditor();
+  });
+  $('#le-reset').addEventListener('click', () => {
+    layout = structuredClone(DEFAULT_LAYOUT);
+    renderLayoutEditor();
+  });
+  $('#le-done').addEventListener('click', () => {
+    saveLayout(layout);
+    applyLayout();
+    $('#layout-editor').classList.add('hidden');
+  });
+  window.addEventListener('resize', () => {
+    if (!$('#layout-editor').classList.contains('hidden')) renderLayoutEditor();
+    applyLayout();
+  });
+}
+
 // ---------- Усиления игроков ----------
 
 function openPlayersTab() {
@@ -907,6 +987,7 @@ function enterGame() {
     });
     window.addEventListener('resize', () => input.reset());
     applyOptions();
+    applyLayout();
   }
   renderer.clear();
   renderer.resize();

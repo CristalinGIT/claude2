@@ -1,16 +1,16 @@
 // Управление: два виртуальных стика на тачскрине, WASD + мышь на компьютере.
-const STICK_R = 60;
-// Зоны стиков: только нижняя часть экрана (слева — движение, справа — прицел).
+import { DEFAULT_LAYOUT, itemPx } from './layout.js';
+
+// Плавающие стики: только нижняя часть экрана.
 const ZONE_TOP = 0.35;
-const REST_X = 110;
-const REST_Y = 100;
 
 export class Input {
   constructor(root, { aimFromMouse }) {
     this.root = root;
     this.aimFromMouse = aimFromMouse;
-    this.move = { x: 0, y: 0, id: null, el: null };
-    this.aim = { x: 0, y: 0, id: null, el: null };
+    this.move = { key: 'move', x: 0, y: 0, id: null, el: null, r: 60 };
+    this.aim = { key: 'aim', x: 0, y: 0, id: null, el: null, r: 60 };
+    this.layout = DEFAULT_LAYOUT;
     this.keys = new Set();
     this.mouse = { x: 0, y: 0, down: false, active: false };
     this.enabled = false;
@@ -53,9 +53,8 @@ export class Input {
     this.mouse.active = false;
     this.touchUi = true;
     for (const t of e.changedTouches) {
-      if (t.clientY < window.innerHeight * ZONE_TOP) continue;
-      const stick = t.clientX < window.innerWidth / 2 ? this.move : this.aim;
-      if (stick.id !== null) continue;
+      const stick = this.stickFor(t.clientX, t.clientY);
+      if (!stick || stick.id !== null) continue;
       stick.id = t.identifier;
       if (this.fixed) {
         // Фиксированный стик стоит на месте — палец просто отклоняет его.
@@ -70,26 +69,58 @@ export class Input {
     }
   }
 
+  // Какой стик берёт это касание.
+  stickFor(px, py) {
+    const m = itemPx(this.layout, 'move'), a = itemPx(this.layout, 'aim');
+    if (this.fixed) {
+      // Фиксированные: ближайший стик, если касание не слишком далеко от него.
+      const dm = Math.hypot(px - m.x, py - m.y) / (m.size / 2);
+      const da = Math.hypot(px - a.x, py - a.y) / (a.size / 2);
+      const best = dm < da ? [this.move, dm] : [this.aim, da];
+      return best[1] < 2.6 ? best[0] : null;
+    }
+    // Плавающие: нижняя часть экрана, сторона ближайшего стика.
+    if (py < window.innerHeight * ZONE_TOP) return null;
+    return Math.abs(px - m.x) <= Math.abs(px - a.x) ? this.move : this.aim;
+  }
+
   moveStick(stick, px, py) {
+    const R = stick.r;
     let dx = px - stick.ox, dy = py - stick.oy;
     const d = Math.hypot(dx, dy);
-    if (d > STICK_R) {
+    if (d > R) {
       if (this.fixed) {
-        dx *= STICK_R / d; dy *= STICK_R / d;
+        dx *= R / d; dy *= R / d;
       } else {
         // Плавающий стик «тянется» за пальцем, если тот ушёл далеко.
-        stick.ox += (dx / d) * (d - STICK_R);
-        stick.oy += (dy / d) * (d - STICK_R);
+        stick.ox += (dx / d) * (d - R);
+        stick.oy += (dy / d) * (d - R);
         dx = px - stick.ox; dy = py - stick.oy;
       }
     }
-    stick.x = dx / STICK_R; stick.y = dy / STICK_R;
+    stick.x = dx / R; stick.y = dy / R;
     showStick(stick, stick.ox, stick.oy);
   }
 
   restPos(stick) {
-    const left = stick === this.move;
-    return [left ? REST_X : window.innerWidth - REST_X, window.innerHeight - REST_Y];
+    const p = itemPx(this.layout, stick.key);
+    return [p.x, p.y];
+  }
+
+  // Применить раскладку: размеры стиков и их места в покое.
+  setLayout(layout) {
+    this.layout = layout;
+    for (const st of [this.move, this.aim]) {
+      const { size } = itemPx(layout, st.key);
+      st.r = size / 2;
+      st.el.style.width = st.el.style.height = size + 'px';
+      st.el.style.margin = `${-size / 2}px 0 0 ${-size / 2}px`;
+      const knob = size * 0.43;
+      Object.assign(st.el.firstChild.style, {
+        width: knob + 'px', height: knob + 'px', margin: `${-knob / 2}px 0 0 ${-knob / 2}px`,
+      });
+    }
+    this.reset();
   }
 
   onTouchMove(e) {
@@ -179,7 +210,7 @@ function showStick(stick, ox, oy) {
   el.style.left = ox + 'px';
   el.style.top = oy + 'px';
   const k = el.firstChild;
-  k.style.transform = `translate(${stick.x * STICK_R}px, ${stick.y * STICK_R}px)`;
+  k.style.transform = `translate(${stick.x * stick.r}px, ${stick.y * stick.r}px)`;
 }
 
 function r2(v) { return Math.round(v * 100) / 100; }

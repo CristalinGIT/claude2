@@ -32,7 +32,7 @@
         <button id="btn-solo" class="ghost">Тренировка с ботами</button>
         <button class="ghost btn-catalog">📖 Все карточки</button>
       </div>
-      <button class="ghost btn-settings">⚙ Настройки</button>
+      <button class="btn-settings">⚙ Настройки и управление</button>
       <p id="status"></p>
       <details class="help">
         <summary>Как играть</summary>
@@ -181,6 +181,7 @@
         </div>
         <p class="hint" id="opt-sticks-hint"></p>
       </div>
+      <button id="btn-layout">🎮 Расположение и размер кнопок</button>
       <div class="setting">
         <span>Звук</span>
         <div class="seg" id="opt-sound">
@@ -190,6 +191,21 @@
       </div>
       <p class="hint">Версия игры: <b id="app-version"></b></p>
     </div>
+  </div>
+
+  <div id="layout-editor" class="hidden">
+    <div class="le-bar">
+      <span class="le-hint">Перетащите кнопки пальцем</span>
+      <label class="le-size"><span id="le-sel">Движение</span>
+        <input type="range" id="le-scale" min="60" max="170" step="5">
+      </label>
+      <button id="le-reset">Сброс</button>
+      <button id="le-done" class="primary">Готово</button>
+    </div>
+    <div class="le-item" data-k="move"><span>🕹️</span><small>Движение</small></div>
+    <div class="le-item" data-k="aim"><span>🎯</span><small>Прицел</small></div>
+    <div class="le-item" data-k="ab1"><span>✨</span><small>Способн. 1</small></div>
+    <div class="le-item" data-k="ab2"><span>💣</span><small>Способн. 2</small></div>
   </div>
 
   <div id="rotate">📱↻<br>Поверните телефон горизонтально</div>
