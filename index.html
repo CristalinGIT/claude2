@@ -28,7 +28,10 @@
         <input id="code" maxlength="4" placeholder="КОД" autocomplete="off" autocapitalize="characters" spellcheck="false">
         <button id="btn-join" class="big">Войти</button>
       </div>
-      <button id="btn-solo" class="ghost">Тренировка с ботами</button>
+      <div class="row">
+        <button id="btn-solo" class="ghost">Тренировка с ботами</button>
+        <button class="ghost btn-catalog">📖 Все карточки</button>
+      </div>
       <p id="status"></p>
       <details class="help">
         <summary>Как играть</summary>
@@ -80,7 +83,10 @@
           <button id="btn-fill">Выровнять команды ботами</button>
           <button id="btn-start" class="big primary">Начать бой</button>
           <p id="client-wait" class="muted">Ждём, пока хост начнёт…</p>
-          <button id="btn-leave" class="ghost">Выйти</button>
+          <div class="row">
+            <button class="ghost btn-catalog">📖 Все карточки</button>
+            <button id="btn-leave" class="ghost">Выйти</button>
+          </div>
         </div>
       </div>
     </div>
@@ -90,7 +96,8 @@
     <canvas id="canvas"></canvas>
     <div id="damage"></div>
     <div id="hud">
-      <button id="btn-exit" aria-label="Выйти">✕</button>
+      <button id="btn-exit" class="hud-btn" aria-label="Выйти">✕</button>
+      <button class="hud-btn btn-catalog" aria-label="Карточки">📖</button>
       <div id="scoreboard"></div>
       <div class="hud-right">
         <div id="hud-code"></div>
@@ -123,6 +130,17 @@
       </div>
     </div>
   </section>
+
+  <div id="catalog" class="overlay hidden">
+    <div class="draft-box catalog-box">
+      <div class="catalog-head">
+        <h2>Карточки усилений</h2>
+        <button id="catalog-close" aria-label="Закрыть">✕</button>
+      </div>
+      <p id="catalog-sub" class="muted"></p>
+      <div id="catalog-list"></div>
+    </div>
+  </div>
 
   <div id="rotate">📱↻<br>Поверните телефон горизонтально</div>
   <div id="toast"></div>

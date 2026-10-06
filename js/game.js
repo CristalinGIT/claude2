@@ -249,6 +249,18 @@ export class Game {
     this.phaseT = CFG.DRAFT_TIME;
   }
 
+  // Тренировка: выставить танку произвольный набор карт прямо в бою.
+  setCards(id, cards) {
+    const t = this.tanks.get(id);
+    if (!t) return;
+    t.cards = cards;
+    t.s = statsFromCards(cards);
+    if (t.alive) {
+      t.hp = t.s.maxHp;
+      t.shield = t.s.shieldMax;
+    }
+  }
+
   pickCard(id, cardId) {
     const offer = this.offers.get(id);
     const t = this.tanks.get(id);

@@ -1,7 +1,7 @@
 import {
   Game, EV, COLORS, TEAM_COLORS, TEAM_NAMES, DEFAULT_SETTINGS, angleDiff, sideName, sideColor,
 } from './game.js';
-import { CARD_BY_ID } from './cards.js';
+import { CARDS, CARD_BY_ID } from './cards.js';
 import { hostRoom, joinRoom } from './net.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
@@ -92,6 +92,14 @@ function initMenu() {
     if (b.dataset.act === 'join') requestTeam(team);
     if (b.dataset.act === 'bot+') hostAddBot(team);
     if (b.dataset.act === 'bot-') hostRemoveBot(team);
+  });
+
+  for (const b of document.querySelectorAll('.btn-catalog')) b.addEventListener('click', openCatalog);
+  $('#catalog-close').addEventListener('click', () => $('#catalog').classList.add('hidden'));
+  $('#catalog').addEventListener('click', (e) => {
+    if (e.target.id === 'catalog') $('#catalog').classList.add('hidden');
+    const b = e.target.closest('button[data-cat]');
+    if (b) sandboxCard(b.dataset.cat, +b.dataset.d);
   });
 
   $('#draft-cards').addEventListener('click', (e) => {
@@ -543,6 +551,50 @@ function renderDraftCards() {
   }
 }
 
+// ---------- Справочник карточек ----------
+
+// В тренировке (без сети) карточки можно выдавать себе прямо из справочника.
+function isSandbox() {
+  return app.role === 'host' && !app.code && app.inGame && !!app.game;
+}
+
+function openCatalog() {
+  renderCatalog();
+  $('#catalog').classList.remove('hidden');
+}
+
+function renderCatalog() {
+  const sandbox = isSandbox();
+  const mine = app.inGame ? (app.roster.get(app.myId)?.cards ?? []) : [];
+  $('#catalog-sub').textContent = sandbox
+    ? 'Тренировка: добавляйте и убирайте карточки кнопками + и − и сразу пробуйте в бою.'
+    : 'В режиме «Раунды» после каждого проигранного раунда выпадают 3 случайные карточки — выберите одну. ' +
+      'Карточки складываются: одну и ту же можно взять несколько раз (до указанного предела).';
+  $('#catalog-list').innerHTML = CARDS.map((c) => {
+    const have = mine.filter((x) => x === c.id).length;
+    const right = sandbox
+      ? `<div class="cnt-ctl"><button data-cat="${c.id}" data-d="-1">−</button><em>${have}/${c.max}</em>` +
+        `<button data-cat="${c.id}" data-d="1">+</button></div>`
+      : `<div class="cnt">${have ? `у вас ${have}/${c.max}` : (c.max > 1 ? `до ${c.max} раз` : 'один раз')}</div>`;
+    return `<div class="cat-item${have ? ' owned' : ''}"><span class="card-icon">${c.icon}</span>` +
+      `<b>${c.name}</b>${right}<span class="desc">${c.desc}</span></div>`;
+  }).join('');
+}
+
+function sandboxCard(id, d) {
+  if (!isSandbox()) return;
+  const t = app.game.tanks.get(app.myId);
+  const c = CARD_BY_ID.get(id);
+  if (!t || !c) return;
+  const cards = [...t.cards];
+  const have = cards.filter((x) => x === id).length;
+  if (d > 0 && have < c.max) cards.push(id);
+  if (d < 0 && have > 0) cards.splice(cards.lastIndexOf(id), 1);
+  app.game.setCards(app.myId, cards);
+  broadcastRoster();
+  renderCatalog();
+}
+
 function cardIcons(ids) {
   return (ids || []).map((id) => CARD_BY_ID.get(id)?.icon ?? '').join('');
 }
@@ -599,6 +651,7 @@ function handleEvents(events) {
 
 function enterLobby() {
   show('lobby');
+  $('#catalog').classList.add('hidden');
   app.inGame = false;
   app.myOffer = null;
   input?.setEnabled(false);
@@ -665,6 +718,7 @@ function renderLobby(players, settings) {
 
 function enterGame() {
   show('game');
+  $('#catalog').classList.add('hidden');
   app.inGame = true;
   app.myOffer = null;
   app.lastPhase = null;
