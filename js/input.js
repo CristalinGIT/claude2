@@ -25,10 +25,12 @@ export class Input {
     root.addEventListener('touchcancel', (e) => this.onTouchEnd(e), { passive: false });
 
     this.abilityLatch = false;
+    this.abilityLatch2 = false;
     this.fixed = false;
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
       if (this.enabled && !e.repeat && ['KeyE', 'ShiftLeft', 'ShiftRight', 'Space'].includes(e.code)) this.abilityLatch = true;
+      if (this.enabled && !e.repeat && e.code === 'KeyQ') this.abilityLatch2 = true;
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => { this.keys.clear(); this.mouse.down = false; });
@@ -147,8 +149,9 @@ export class Input {
       fire = this.mouse.down;
     }
     const ability = this.abilityLatch;
-    this.abilityLatch = false;
-    return { mx: r2(mx), my: r2(my), ax: r2(ax), ay: r2(ay), fire, ability };
+    const ability2 = this.abilityLatch2;
+    this.abilityLatch = this.abilityLatch2 = false;
+    return { mx: r2(mx), my: r2(my), ax: r2(ax), ay: r2(ay), fire, ability, ability2 };
   }
 
   reset() {

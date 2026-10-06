@@ -37,7 +37,7 @@
       <details class="help">
         <summary>Как играть</summary>
         <p>Все в одной Wi-Fi сети или на раздаче с телефона. Один нажимает «Создать игру» и называет код, остальные вводят его и жмут «Войти».</p>
-        <p>Левый стик — движение, правый — прицел и стрельба, круглая кнопка над ним — способность. На компьютере: WASD, мышь, способность — E, Shift, пробел или правая кнопка мыши.</p>
+        <p>Левый стик — движение, правый — прицел и стрельба, круглая кнопка над ним — способность. На компьютере: WASD, мышь, способность — E, Shift, пробел или правая кнопка мыши, вторая способность — Q.</p>
         <p>Пули рикошетят — и после рикошета могут попасть в вас самих.</p>
         <p>Режим «Раунды»: без возрождений, раунд выигрывает последний выживший (или команда). Проигравшие получают карточку усиления, победитель — очко.</p>
       </details>
@@ -66,6 +66,14 @@
               <button data-v="2">2 ком.</button>
               <button data-v="3">3</button>
               <button data-v="4">4</button>
+            </div>
+          </div>
+          <div class="setting">
+            <span>Карта</span>
+            <div class="stepper map-stepper">
+              <button id="map-prev">◀</button>
+              <b id="map-name">Случайная</b>
+              <button id="map-next">▶</button>
             </div>
           </div>
           <div class="setting">
@@ -109,7 +117,8 @@
       </div>
     </div>
     <div id="center-msg" class="hidden"></div>
-    <button id="btn-ability" class="hidden" aria-label="Способность"><span class="ab-icon"></span><span class="ab-cd"></span></button>
+    <button id="btn-ability" class="ab-btn hidden" aria-label="Способность"><span class="ab-icon"></span><span class="ab-cd"></span></button>
+    <button id="btn-ability2" class="ab-btn hidden" aria-label="Вторая способность"><span class="ab-icon"></span><span class="ab-cd"></span></button>
     <div id="draft" class="overlay hidden">
       <div class="draft-box">
         <h2 id="draft-title"></h2>

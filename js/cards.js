@@ -47,8 +47,10 @@ export function defaultStats() {
     laser: false,
     lastChance: false,
     ram: false,
-    ability: null,
-    abilityCd: 0,
+    ability: null,       // первая способность (для совместимости)
+    abilities: [],       // активные способности по порядку получения
+    abilityCds: [],      // перезарядка каждой из них
+    abilitySlots: 1,
     abilityLevels: {},
     blinkStrike: false,
     ambush: false,
@@ -59,7 +61,10 @@ export function defaultStats() {
 function ability(id) {
   return (s) => {
     s.abilityLevels[id] = (s.abilityLevels[id] || 0) + 1;
-    s.ability = id;
+    if (s.abilities.includes(id)) return;
+    s.abilities.push(id);
+    // Слоты заняты — новая способность вытесняет самую старую.
+    if (s.abilities.length > s.abilitySlots) s.abilities.shift();
   };
 }
 
@@ -121,6 +126,8 @@ export const CARDS = [
     apply: (s) => { s.speed *= 1.25; s.maxHp -= 20; } },
   { id: 'adrenaline', kind: 'stat', icon: '💉', name: 'Адреналин', desc: 'После получения урона 1.5 с скорость +40%', max: 1,
     apply: (s) => { s.adrenaline = true; } },
+  { id: 'slot', kind: 'stat', icon: '➕', name: '+1 способность', desc: 'Второй слот под способность (вторая кнопка). В следующем выборе одна карта точно будет способностью', max: 1,
+    apply: (s) => { s.abilitySlots += 1; } },
   { id: 'overload', kind: 'stat', icon: '🔋', name: 'Перегрузка', desc: 'Способность перезаряжается на 30% быстрее, оружие — на 10% дольше', max: 2, needsAbility: true,
     apply: (s) => { s.abilityCdMul *= 0.7; s.cdMul *= 1.1; } },
   { id: 'rubber', kind: 'stat', icon: '🪀', name: 'Резиновая броня', desc: 'Свои пули вас не ранят', max: 1,
@@ -174,10 +181,9 @@ export const CARD_BY_ID = new Map(CARDS.map((c) => [c.id, c]));
 export function statsFromCards(cardIds) {
   const s = defaultStats();
   for (const id of cardIds) CARD_BY_ID.get(id)?.apply(s);
-  if (s.ability) {
-    const a = ABILITIES[s.ability];
-    s.abilityCd = a.cd * Math.pow(0.8, (s.abilityLevels[s.ability] || 1) - 1) * s.abilityCdMul;
-  }
+  s.abilityCds = s.abilities.map((id) =>
+    ABILITIES[id].cd * Math.pow(0.8, (s.abilityLevels[id] || 1) - 1) * s.abilityCdMul);
+  s.ability = s.abilities[0] ?? null;
   s.maxHp = Math.max(30, Math.round(s.maxHp * s.hpMul));
   return s;
 }
@@ -192,10 +198,10 @@ function countCards(owned) {
 export function cardAvailable(card, owned, stats = statsFromCards(owned)) {
   const count = countCards(owned);
   if ((count.get(card.id) || 0) >= card.max) return false;
-  if (card.needsAbility && !stats.ability) return false;
+  if (card.needsAbility && !stats.abilities.length) return false;
   if (card.reqId) {
     if ((count.get(card.reqId) || 0) < (card.reqN || 1)) return false;
-    if (card.reqAbility && stats.ability !== card.reqId) return false;
+    if (card.reqAbility && !stats.abilities.includes(card.reqId)) return false;
   }
   return true;
 }
@@ -209,6 +215,17 @@ export function rollCards(owned, n = 3) {
     pool.push({ id: c.id, w: c.kind === 'evo' ? 3 : 1 });
   }
   const res = [];
+  // Сразу после «+1 способность» одна из карт — гарантированно способность (лучше новая).
+  if (owned[owned.length - 1] === 'slot') {
+    const abs = pool.filter((p) => CARD_BY_ID.get(p.id).kind === 'ability');
+    const fresh = abs.filter((p) => !stats.abilities.includes(p.id));
+    const from = fresh.length ? fresh : abs;
+    if (from.length) {
+      const pick = from[Math.floor(Math.random() * from.length)];
+      res.push(pick.id);
+      pool.splice(pool.indexOf(pick), 1);
+    }
+  }
   while (res.length < n && pool.length) {
     const total = pool.reduce((a, p) => a + p.w, 0);
     let r = Math.random() * total;

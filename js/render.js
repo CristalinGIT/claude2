@@ -19,19 +19,14 @@ export class Renderer {
     this.scene.background = new THREE.Color(0x1a1d2e);
     this.camera = new THREE.PerspectiveCamera(35, 1, 0.5, 200);
 
-    this.worldW = MAP.w * CELL;
-    this.worldH = MAP.h * CELL;
-    this.center = new THREE.Vector3(this.worldW / 2, 0, this.worldH / 2);
-
+    this.center = new THREE.Vector3();
     this.buildLights();
-    this.buildArena();
 
     this.zoneRing = new THREE.Mesh(
       new THREE.RingGeometry(0.97, 1, 96),
       new THREE.MeshBasicMaterial({ color: 0xff3355, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
     );
     this.zoneRing.rotation.x = -Math.PI / 2;
-    this.zoneRing.position.set(this.center.x, 0.05, this.center.z);
     this.zoneRing.visible = false;
     this.scene.add(this.zoneRing);
 
@@ -46,21 +41,47 @@ export class Renderer {
     this.raycaster = new THREE.Raycaster();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.5);
 
-    this.resize();
+    this.mapId = null;
+    this.setMap();
     window.addEventListener('resize', () => this.resize());
+  }
+
+  // Перестроить арену под текущую карту (MAP), если она сменилась.
+  setMap() {
+    if (this.mapId === MAP.id) return;
+    this.mapId = MAP.id;
+    this.worldW = MAP.w * CELL;
+    this.worldH = MAP.h * CELL;
+    this.center.set(this.worldW / 2, 0, this.worldH / 2);
+    if (this.arena) {
+      this.scene.remove(this.arena);
+      this.arena.traverse((o) => { o.geometry?.dispose(); o.material?.map?.dispose(); o.material?.dispose(); });
+    }
+    this.arena = new THREE.Group();
+    this.scene.add(this.arena);
+    this.buildArena();
+    this.zoneRing.position.set(this.center.x, 0.05, this.center.z);
+    const sun = this.sun;
+    sun.position.set(this.center.x - 10, 30, this.center.z - 14);
+    sun.target.position.copy(this.center);
+    const half = Math.max(this.worldW, this.worldH) / 2 + 4;
+    const sc = sun.shadow.camera;
+    sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half;
+    sc.updateProjectionMatrix();
+    this.renderWalls([]);
+    this.resize();
   }
 
   buildLights() {
     this.scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x30283a, 1.1));
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-    sun.position.set(this.center.x - 10, 30, this.center.z - 14);
-    sun.target.position.copy(this.center);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(2048, 2048);
     const s = sun.shadow.camera;
-    s.left = -24; s.right = 24; s.top = 24; s.bottom = -24; s.near = 1; s.far = 80;
+    s.near = 1; s.far = 90;
     sun.shadow.bias = -0.0015;
     this.scene.add(sun, sun.target);
+    this.sun = sun;
   }
 
   buildArena() {
@@ -75,11 +96,11 @@ export class Renderer {
     floor.rotation.x = -Math.PI / 2;
     floor.position.copy(this.center);
     floor.receiveShadow = true;
-    this.scene.add(floor);
+    this.arena.add(floor);
 
     // Стены одним InstancedMesh — быстро даже на слабых телефонах.
     const cells = [];
-    for (let r = 0; r < MAP.h; r++) for (let c = 0; c < MAP.w; c++) if (MAP.solid(c, r)) cells.push([c, r]);
+    for (let r = 0; r < MAP.h; r++) for (let c = 0; c < MAP.w; c++) if (MAP.staticSolid(c, r)) cells.push([c, r]);
     const geo = new THREE.BoxGeometry(CELL, WALL_H, CELL);
     const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
     const walls = new THREE.InstancedMesh(geo, mat, cells.length);
@@ -94,7 +115,7 @@ export class Renderer {
     });
     walls.castShadow = true;
     walls.receiveShadow = true;
-    this.scene.add(walls);
+    this.arena.add(walls);
   }
 
   resize() {
@@ -158,6 +179,7 @@ export class Renderer {
 
   // state: { tanks, bullets, walls, mines, zone }; opts: { isAlly(id), laser: {bounces} | null }
   render(state, myId, dt, time, opts = {}) {
+    this.setMap();
     const isAlly = opts.isAlly ?? ((id) => id === myId);
     const seen = new Set();
     for (const t of state.tanks) {

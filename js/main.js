@@ -3,11 +3,12 @@ import {
 } from './game.js';
 import { CARDS, CARD_BY_ID, ABILITIES, statsFromCards } from './cards.js';
 import { hostRoom, joinRoom } from './net.js';
+import { MAP, MAPS, MAP_BY_ID, setMap } from './map.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { sfx, unlockAudio, setMuted } from './sound.js';
 
-const APP_VERSION = '8';
+const APP_VERSION = '9';
 
 const MAX_HUMANS = 8;
 const MAX_TANKS = 12;
@@ -82,6 +83,8 @@ function initMenu() {
     const v = e.target.closest('button')?.dataset.v;
     if (v != null) hostSetSettings({ teams: +v });
   });
+  $('#map-prev').addEventListener('click', () => hostStepMap(-1));
+  $('#map-next').addEventListener('click', () => hostStepMap(1));
   $('#target-minus').addEventListener('click', () => hostStepTarget(-1));
   $('#target-plus').addEventListener('click', () => hostStepTarget(1));
   $('#btn-fill').addEventListener('click', hostFillBots);
@@ -317,6 +320,19 @@ function hostSetSettings(patch) {
   broadcastLobby();
 }
 
+const MAP_CHOICES = ['random', ...MAPS.map((m) => m.id)];
+
+function hostStepMap(dir) {
+  const i = Math.max(0, MAP_CHOICES.indexOf(app.settings.map));
+  hostSetSettings({ map: MAP_CHOICES[(i + dir + MAP_CHOICES.length) % MAP_CHOICES.length] });
+}
+
+function mapLabel(id) {
+  if (id === 'random') return '🎲 Случайная';
+  const m = MAP_BY_ID.get(id);
+  return m ? `${m.name} (${m.rows[0].length}×${m.rows.length})` : '?';
+}
+
 function hostStepTarget(dir) {
   const s = app.settings;
   if (s.mode === 'rounds') hostSetSettings({ roundsToWin: clamp(s.roundsToWin + dir, 1, 15) });
@@ -477,6 +493,11 @@ function clientOnMessage(msg) {
 }
 
 function clientOnSnap(msg) {
+  if (msg.map && msg.map !== MAP.id) {
+    // Новая карта: старые снимки относятся к прошлой арене.
+    setMap(msg.map);
+    app.snaps = [];
+  }
   const now = performance.now();
   const off = now - msg.tm;
   // Оценка разницы часов: берём минимальную задержку, но медленно подстраиваемся.
@@ -515,7 +536,7 @@ function interpolate(a, b, k) {
       tur: p[4] + angleDiff(p[4], t[4]) * kk,
       hp: t[5], alive: !!(t[6] & TF.ALIVE), inv: !!(t[6] & TF.INV), invis: !!(t[6] & TF.INVIS),
       poisoned: !!(t[6] & TF.POISONED), slowed: !!(t[6] & TF.SLOWED),
-      kills: t[7], deaths: t[8], respawn: t[9], maxHp: t[10], shield: t[11], abilityT: t[12] / 10,
+      kills: t[7], deaths: t[8], respawn: t[9], maxHp: t[10], shield: t[11], abilityTs: [t[12] / 10, t[13] / 10],
       color: app.roster.get(t[0])?.color ?? 0xffffff,
     };
   });
@@ -580,9 +601,11 @@ function cardBadge(c) {
 // Предупреждение, что новая способность заменит текущую.
 function replaceNote(c, mine) {
   if (c.kind !== 'ability') return '';
-  const cur = statsFromCards(mine).ability;
-  if (!cur || cur === c.id) return '';
-  return `<small class="warn">заменит «${ABILITIES[cur].name}»</small>`;
+  const st = statsFromCards(mine);
+  if (st.abilities.includes(c.id)) return '<small>перезарядка −20%</small>';
+  if (st.abilities.length < st.abilitySlots) return '';
+  // Все слоты заняты — уйдёт самая старая способность.
+  return `<small class="warn">заменит «${ABILITIES[st.abilities[0]].name}»</small>`;
 }
 
 // ---------- Настройки игрока ----------
@@ -643,13 +666,13 @@ function renderPlayersTab() {
   $('#players-list').innerHTML = list.map((p) => {
     const counts = new Map();
     for (const id of p.cards || []) counts.set(id, (counts.get(id) || 0) + 1);
-    const ability = statsFromCards(p.cards || []).ability;
-    // Сначала текущая способность, потом остальные карты.
-    const items = [...counts].sort((a, b) => (b[0] === ability) - (a[0] === ability)).map(([id, n]) => {
+    const active = statsFromCards(p.cards || []).abilities;
+    // Сначала текущие способности, потом остальные карты.
+    const items = [...counts].sort((a, b) => active.includes(b[0]) - active.includes(a[0])).map(([id, n]) => {
       const c = CARD_BY_ID.get(id);
       if (!c) return '';
       // Заменённая способность больше не действует — не показываем её.
-      if (c.kind === 'ability' && id !== ability) return '';
+      if (c.kind === 'ability' && !active.includes(id)) return '';
       const cls = c.kind === 'ability' ? ' ability' : c.kind === 'evo' ? ' evo' : '';
       return `<span class="pl-card${cls}" title="${escapeHtml(c.desc)}">${c.icon} ${c.name}${n > 1 ? ` <b>×${n}</b>` : ''}</span>`;
     }).join('');
@@ -821,6 +844,8 @@ function renderLobby(players, settings) {
   $('#target-label').textContent = rounds ? 'Раундов до победы' : 'Фрагов до победы';
   $('#target-val').textContent = rounds ? settings.roundsToWin : settings.killsToWin;
   $('#target-minus').disabled = $('#target-plus').disabled = !isHost;
+  $('#map-prev').disabled = $('#map-next').disabled = !isHost;
+  $('#map-name').textContent = mapLabel(settings.map ?? 'random');
   $('#mode-hint').textContent = rounds
     ? 'Без возрождений: раунд идёт, пока не останется один игрок или одна команда. Проигравшие выбирают карточку усиления.'
     : 'Возрождение после гибели. Побеждает тот, кто первым наберёт нужное число уничтожений.';
@@ -872,10 +897,11 @@ function enterGame() {
   if (!renderer) {
     renderer = new Renderer($('#canvas'));
     renderer.colorOf = (id) => app.roster.get(id)?.color;
-    const ab = $('#btn-ability');
-    const press = (e) => { e.preventDefault(); input.abilityLatch = true; };
-    ab.addEventListener('touchstart', press, { passive: false });
-    ab.addEventListener('mousedown', press);
+    for (const [id, latch] of [['#btn-ability', 'abilityLatch'], ['#btn-ability2', 'abilityLatch2']]) {
+      const press = (e) => { e.preventDefault(); input[latch] = true; };
+      $(id).addEventListener('touchstart', press, { passive: false });
+      $(id).addEventListener('mousedown', press);
+    }
     input = new Input($('#game'), {
       aimFromMouse: (px, py) => renderer.aimDirection(px, py, app.myView),
     });
@@ -942,20 +968,24 @@ function isAlly(id) {
 }
 
 function updateAbilityButton(stats) {
-  const btn = $('#btn-ability');
   const me = app.myView;
-  const ab = stats.ability && ABILITIES[stats.ability];
-  if (!ab || !me) { btn.classList.add('hidden'); return; }
-  btn.classList.remove('hidden');
-  if (btn.dataset.ab !== stats.ability) {
-    btn.dataset.ab = stats.ability;
-    btn.querySelector('.ab-icon').textContent = ab.icon;
-  }
-  const left = me.abilityT || 0;
-  const frac = stats.abilityCd ? Math.min(1, left / stats.abilityCd) : 0;
-  btn.style.setProperty('--cd', (frac * 360).toFixed(0) + 'deg');
-  btn.querySelector('.ab-cd').textContent = left > 0.05 ? Math.ceil(left) : '';
-  btn.classList.toggle('ready', left <= 0.05 && me.alive);
+  ['#btn-ability', '#btn-ability2'].forEach((sel, slot) => {
+    const btn = $(sel);
+    const id = stats.abilities[slot];
+    const ab = id && ABILITIES[id];
+    if (!ab || !me) { btn.classList.add('hidden'); return; }
+    btn.classList.remove('hidden');
+    if (btn.dataset.ab !== id) {
+      btn.dataset.ab = id;
+      btn.querySelector('.ab-icon').textContent = ab.icon;
+    }
+    const left = me.abilityTs?.[slot] || 0;
+    const max = stats.abilityCds[slot];
+    const frac = max ? Math.min(1, left / max) : 0;
+    btn.style.setProperty('--cd', (frac * 360).toFixed(0) + 'deg');
+    btn.querySelector('.ab-cd').textContent = left > 0.05 ? Math.ceil(left) : '';
+    btn.classList.toggle('ready', left <= 0.05 && me.alive);
+  });
 }
 
 function mySide() {

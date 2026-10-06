@@ -1,5 +1,5 @@
 // Симуляция игры. Работает только на устройстве хоста.
-import { MAP, CELL, isSolid, emptyCells, cellKey } from './map.js';
+import { MAP, CELL, isSolid, emptyCells, cellKey, setMap, randomMapId } from './map.js';
 import { botThink } from './bot.js';
 import { statsFromCards, rollCards, CARD_BY_ID, ABILITIES, BASE_DAMAGE } from './cards.js';
 
@@ -10,7 +10,7 @@ export const CFG = {
   BULLET_SPEED: 15,
   BULLET_R: 0.18,
   BULLET_LIFE: 2.6,
-  FIRE_CD: 0.45,
+  FIRE_CD: 0.55,
   RESPAWN: 2.5,
   INVULN: 1.5,
   COUNTDOWN: 3,
@@ -49,7 +49,7 @@ export const COLORS = [
 export const TEAM_COLORS = [0xff4d4d, 0x4da6ff, 0x5ce65c, 0xffd23f];
 export const TEAM_NAMES = ['Красные', 'Синие', 'Зелёные', 'Жёлтые'];
 
-export const DEFAULT_SETTINGS = { mode: 'rounds', teams: 0, roundsToWin: 5, killsToWin: 10 };
+export const DEFAULT_SETTINGS = { mode: 'rounds', teams: 0, roundsToWin: 5, killsToWin: 10, map: 'random' };
 
 // Флаги танка в снимке.
 export const TF = { ALIVE: 1, INV: 2, INVIS: 4, POISONED: 8, SLOWED: 16 };
@@ -73,6 +73,9 @@ export class Game {
     this.offers = new Map();     // id танка -> предложенные карты
     this.newOffers = [];         // для рассылки игрокам
     this.zone = 0;
+    // «Случайная» карта меняется каждый раунд, иначе играем на выбранной.
+    this.mapId = this.settings.map === 'random' ? randomMapId() : this.settings.map;
+    setMap(this.mapId);
     MAP.dyn.clear();
   }
 
@@ -90,10 +93,10 @@ export class Game {
       x: 0, y: 0, vx: 0, vy: 0, rot: 0, tur: 0,
       cards: [], s: statsFromCards([]),
       hp: 100, shield: 0, shieldT: 0, alive: false, respawnT: 0, cd: 0, inv: 0, zoneT: 0,
-      lastHurt: 0, abilityT: 0, invisT: 0, ambushReady: false, slowT: 0, poison: [],
+      lastHurt: 0, abilityTs: [0, 0], invisT: 0, ambushReady: false, slowT: 0, poison: [],
       lastChanceUsed: false, ramCd: new Map(),
       kills: 0, deaths: 0,
-      input: { mx: 0, my: 0, ax: 0, ay: 0, fire: false, ability: false },
+      input: { mx: 0, my: 0, ax: 0, ay: 0, fire: false, ability: false, ability2: false },
       brain: bot ? {} : null,
     };
     this.tanks.set(id, t);
@@ -121,6 +124,7 @@ export class Game {
     t.input.fire = !!input.fire;
     // Нажатие способности «защёлкивается» до следующего тика.
     if (input.ability) t.input.ability = true;
+    if (input.ability2) t.input.ability2 = true;
   }
 
   resetTank(t) {
@@ -133,7 +137,7 @@ export class Game {
     t.cd = 0.3;
     t.zoneT = 0;
     t.lastHurt = -99;
-    t.abilityT = 0;
+    t.abilityTs = [0, 0];
     t.invisT = 0;
     t.slowT = 0;
     t.poison = [];
@@ -141,7 +145,7 @@ export class Game {
     t.burst = [];
     t.adrenT = 0;
     t.regenT = 0;
-    t.input.ability = false;
+    t.input.ability = t.input.ability2 = false;
     t.rot = t.tur = Math.atan2(MAP.h * CELL / 2 - t.y, MAP.w * CELL / 2 - t.x);
   }
 
@@ -154,7 +158,7 @@ export class Game {
     if (t.alive) {
       t.hp = t.s.maxHp;
       t.shield = t.s.shieldCd ? 1 : 0;
-      t.abilityT = 0;
+      t.abilityTs = [0, 0];
     }
   }
 
@@ -241,7 +245,7 @@ export class Game {
         }
         continue;
       }
-      if (frozen) { t.input.ability = false; continue; }
+      if (frozen) { t.input.ability = t.input.ability2 = false; continue; }
       if (t.bot) botThink(this, t, dt);
       this.stepTank(t, dt);
     }
@@ -323,6 +327,10 @@ export class Game {
     this.round++;
     this.roundWinner = undefined;
     this.bullets = [];
+    if (this.settings.map === 'random') {
+      this.mapId = randomMapId(this.mapId);
+      setMap(this.mapId);
+    }
     this.placeAll();
     this.phase = 'countdown';
     this.phaseT = CFG.COUNTDOWN;
@@ -359,7 +367,8 @@ export class Game {
     t.cd -= dt;
     t.inv = Math.max(0, t.inv - dt);
     t.invisT = Math.max(0, t.invisT - dt);
-    t.abilityT = Math.max(0, t.abilityT - dt);
+    t.abilityTs[0] = Math.max(0, t.abilityTs[0] - dt);
+    t.abilityTs[1] = Math.max(0, t.abilityTs[1] - dt);
 
     // Щит восстанавливается после поглощения.
     if (s.shieldCd && !t.shield) {
@@ -411,9 +420,10 @@ export class Game {
     }
 
     const canAct = this.phase === 'fight' || this.phase === 'roundEnd';
-    if (inp.ability) {
-      inp.ability = false;
-      if (canAct && s.ability && t.abilityT <= 0) this.useAbility(t);
+    for (const [slot, key] of [[0, 'ability'], [1, 'ability2']]) {
+      if (!inp[key]) continue;
+      inp[key] = false;
+      if (canAct && s.abilities[slot] && t.abilityTs[slot] <= 0) this.useAbility(t, slot);
     }
     // «Очередь»: догоняющие залпы вылетают друг за другом.
     if (t.burst?.length) {
@@ -478,10 +488,10 @@ export class Game {
 
   // ---------- Способности ----------
 
-  useAbility(t) {
+  useAbility(t, slot) {
     const s = t.s;
     let ok = false;
-    switch (s.ability) {
+    switch (s.abilities[slot]) {
       case 'blink': ok = this.blink(t); break;
       case 'invis':
         t.invisT = ABILITIES.invis.duration;
@@ -491,7 +501,7 @@ export class Game {
       case 'wall': ok = this.buildWall(t); break;
       case 'mine': ok = this.dropMine(t); break;
     }
-    if (ok) t.abilityT = s.abilityCd;
+    if (ok) t.abilityTs[slot] = s.abilityCds[slot];
   }
 
   // Прыжок по направлению движения (или башни), можно сквозь стены.
@@ -861,7 +871,7 @@ export class Game {
         t.kills, t.deaths,
         t.alive || this.rounds ? 0 : Math.max(0, Math.ceil(t.respawnT)),
         Math.round(t.s.maxHp), t.shield,
-        Math.round(t.abilityT * 10),
+        Math.round(t.abilityTs[0] * 10), Math.round(t.abilityTs[1] * 10),
       ]);
     }
     const bullets = this.bullets.map((b) => [b.id, r2(b.x), r2(b.y), b.owner, Math.round(b.r * 100)]);
@@ -871,6 +881,7 @@ export class Game {
     for (const [id, o] of this.offers) if (!o.picked) waiting.push(id);
     return {
       tanks, bullets, walls, mines,
+      map: this.mapId,
       phase: this.phase,
       phaseT: Math.max(0, Math.ceil(this.phaseT)),
       round: this.round,

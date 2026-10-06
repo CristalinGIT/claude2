@@ -18,7 +18,7 @@ export function botThink(game, t, dt) {
   }
 
   let mx = 0, my = 0, ax = Math.cos(t.tur), ay = Math.sin(t.tur), fire = false;
-  let wantAbility = false;
+  let wantAbility = null;
   let danger = false;
 
   if (target) {
@@ -39,9 +39,9 @@ export function botThink(game, t, dt) {
       ax = Math.cos(aim); ay = Math.sin(aim);
       fire = Math.abs(angleDiff(t.tur, aim)) < 0.15 && dist < 22;
       // Стену ставим, когда цель рядом и мы ранены; мину — когда враг близко.
-      if (t.s.ability === 'wall' && dist < 12 && t.hp < t.s.maxHp * 0.7) wantAbility = Math.random() < dt * 2;
-      if (t.s.ability === 'mine' && dist < 9) wantAbility = Math.random() < dt * 2;
-      if (t.s.ability === 'invis' && t.hp < t.s.maxHp * 0.5) wantAbility = true;
+      if (dist < 12 && t.hp < t.s.maxHp * 0.7 && Math.random() < dt * 2) wantAbility = 'wall';
+      if (dist < 9 && Math.random() < dt * 2) wantAbility = wantAbility || 'mine';
+      if (t.hp < t.s.maxHp * 0.5) wantAbility = wantAbility || 'invis';
 
       // Кружим вокруг цели, держа дистанцию.
       if (b.strafeT <= 0) {
@@ -104,7 +104,7 @@ export function botThink(game, t, dt) {
     if (d < 3.5) danger = true;
   }
   // Блинк — чтобы увернуться от пули.
-  if (t.s.ability === 'blink' && danger) wantAbility = Math.random() < 0.5;
+  if (danger && Math.random() < 0.5) wantAbility = 'blink';
 
   // Если застряли — шаг в случайную сторону.
   const moved = Math.hypot(t.vx, t.vy);
@@ -125,7 +125,9 @@ export function botThink(game, t, dt) {
   t.input.mx = mx; t.input.my = my;
   t.input.ax = ax; t.input.ay = ay;
   t.input.fire = fire;
-  if (wantAbility && t.abilityT <= 0) t.input.ability = true;
+  // Жмём нужную способность, если она есть в одном из слотов и готова.
+  const slot = wantAbility ? t.s.abilities.indexOf(wantAbility) : -1;
+  if (slot >= 0 && t.abilityTs[slot] <= 0) t.input[slot === 0 ? 'ability' : 'ability2'] = true;
 }
 
 // Невидимого врага бот не видит, пока тот не подъедет вплотную.
