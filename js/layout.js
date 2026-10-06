@@ -2,6 +2,7 @@
 export const LAYOUT_ITEMS = {
   move: { label: 'Движение', base: 120 },
   aim: { label: 'Прицел', base: 120 },
+  fire: { label: 'Огонь', base: 92 },
   ab1: { label: 'Способность 1', base: 66 },
   ab2: { label: 'Способность 2', base: 58 },
 };
@@ -9,6 +10,7 @@ export const LAYOUT_ITEMS = {
 export const DEFAULT_LAYOUT = {
   move: { x: 0.13, y: 0.74, s: 1 },
   aim: { x: 0.87, y: 0.74, s: 1 },
+  fire: { x: 0.88, y: 0.76, s: 1 },
   ab1: { x: 0.73, y: 0.74, s: 1 },
   ab2: { x: 0.79, y: 0.54, s: 1 },
 };

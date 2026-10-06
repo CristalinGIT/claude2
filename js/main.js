@@ -9,7 +9,7 @@ import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { sfx, unlockAudio, setMuted } from './sound.js';
 
-const APP_VERSION = '10';
+const APP_VERSION = '11';
 
 const MAX_HUMANS = 8;
 const MAX_TANKS = 12;
@@ -109,6 +109,10 @@ function initMenu() {
   for (const id of ['#players-tab', '#settings']) {
     $(id).addEventListener('click', (e) => { if (e.target.id === id.slice(1)) e.target.classList.add('hidden'); });
   }
+  $('#opt-scheme').addEventListener('click', (e) => {
+    const v = e.target.closest('button')?.dataset.v;
+    if (v) saveOptions({ scheme: v });
+  });
   $('#opt-sticks').addEventListener('click', (e) => {
     const v = e.target.closest('button')?.dataset.v;
     if (v) saveOptions({ fixedSticks: v === 'fixed' });
@@ -613,7 +617,7 @@ function replaceNote(c, mine) {
 
 // ---------- Настройки игрока ----------
 
-const options = { fixedSticks: true, muted: false };
+const options = { fixedSticks: true, muted: false, scheme: 'simple' };
 
 function loadOptions() {
   try { Object.assign(options, JSON.parse(localStorage.getItem('tank-options') || '{}')); } catch {}
@@ -631,8 +635,16 @@ function applyOptions() {
   setMuted(options.muted);
   if (input) {
     input.fixed = options.fixedSticks;
+    input.scheme = options.scheme;
     input.reset();
   }
+  updateFireButton();
+}
+
+// Кнопка «Огонь» нужна только в простом управлении на сенсорном экране.
+function updateFireButton() {
+  const show = app.inGame && options.scheme === 'simple' && (input?.touchUi ?? matchMedia('(pointer: coarse)').matches);
+  $('#btn-fire').classList.toggle('hidden', !show);
 }
 
 function openSettings() {
@@ -644,6 +656,12 @@ function renderSettings() {
   for (const b of document.querySelectorAll('#opt-sticks button')) {
     b.classList.toggle('on', (b.dataset.v === 'fixed') === options.fixedSticks);
   }
+  for (const b of document.querySelectorAll('#opt-scheme button')) {
+    b.classList.toggle('on', b.dataset.v === options.scheme);
+  }
+  $('#opt-scheme-hint').textContent = options.scheme === 'simple'
+    ? 'Башня смотрит туда, куда едет танк. Стрельба — кнопкой 🔥.'
+    : 'Левый стик — движение, правый — прицел; отклоните правый стик сильнее, чтобы стрелять.';
   for (const b of document.querySelectorAll('#opt-sound button')) {
     b.classList.toggle('on', (b.dataset.v === 'off') === options.muted);
   }
@@ -661,12 +679,12 @@ let leSel = 'move';
 function applyLayout() {
   input?.setLayout(layout);
   // Кнопки способностей ставим по раскладке.
-  for (const [key, sel] of [['ab1', '#btn-ability'], ['ab2', '#btn-ability2']]) {
+  for (const [key, sel] of [['ab1', '#btn-ability'], ['ab2', '#btn-ability2'], ['fire', '#btn-fire']]) {
     const { x, y, size } = itemPx(layout, key);
     Object.assign($(sel).style, {
       left: x + 'px', top: y + 'px', right: 'auto', bottom: 'auto',
       width: size + 'px', height: size + 'px', margin: `${-size / 2}px 0 0 ${-size / 2}px`,
-      fontSize: (size / 66) + 'em',
+      fontSize: (key === 'fire' ? size / 46 : size / 66) + 'em',
     });
   }
 }
@@ -680,6 +698,10 @@ function openLayoutEditor() {
 function renderLayoutEditor() {
   for (const el of document.querySelectorAll('.le-item')) {
     const k = el.dataset.k;
+    // Показываем только элементы текущей схемы управления.
+    const unused = (k === 'aim' && options.scheme === 'simple') || (k === 'fire' && options.scheme !== 'simple');
+    el.classList.toggle('hidden', unused);
+    if (unused && leSel === k) leSel = 'move';
     const { x, y, size } = itemPx(layout, k);
     Object.assign(el.style, { left: x + 'px', top: y + 'px', width: size + 'px', height: size + 'px' });
     el.classList.toggle('sel', k === leSel);
@@ -977,6 +999,15 @@ function enterGame() {
   if (!renderer) {
     renderer = new Renderer($('#canvas'));
     renderer.colorOf = (id) => app.roster.get(id)?.color;
+    const fireBtn = $('#btn-fire');
+    const fireOn = (e) => { e.preventDefault(); input.fireHeld = true; fireBtn.classList.add('down'); };
+    const fireOff = (e) => { e.preventDefault(); input.fireHeld = false; fireBtn.classList.remove('down'); };
+    fireBtn.addEventListener('touchstart', fireOn, { passive: false });
+    fireBtn.addEventListener('touchend', fireOff, { passive: false });
+    fireBtn.addEventListener('touchcancel', fireOff, { passive: false });
+    fireBtn.addEventListener('mousedown', fireOn);
+    fireBtn.addEventListener('mouseup', fireOff);
+    fireBtn.addEventListener('mouseleave', fireOff);
     for (const [id, latch] of [['#btn-ability', 'abilityLatch'], ['#btn-ability2', 'abilityLatch2']]) {
       const press = (e) => { e.preventDefault(); input[latch] = true; };
       $(id).addEventListener('touchstart', press, { passive: false });
@@ -989,6 +1020,7 @@ function enterGame() {
     applyOptions();
     applyLayout();
   }
+  updateFireButton();
   renderer.clear();
   renderer.resize();
   input.setEnabled(true);

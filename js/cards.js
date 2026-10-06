@@ -94,7 +94,7 @@ export const CARDS = [
     apply: (s) => { s.ice = true; } },
   { id: 'pierce', kind: 'stat', icon: '📌', name: 'Бронебойные', desc: 'Пуля пробивает первый танк насквозь, урон −20%', max: 1,
     apply: (s) => { s.pierce = true; s.damage *= 0.8; } },
-  { id: 'split', kind: 'stat', icon: '🌿', name: 'Осколки', desc: 'При первом рикошете пуля раскалывается на две', max: 1,
+  { id: 'split', kind: 'stat', icon: '🌿', name: 'Осколки', desc: 'При первом рикошете пуля раскалывается на две, урон каждой −40%', max: 1,
     apply: (s) => { s.split = true; } },
   { id: 'laser', kind: 'stat', icon: '🔦', name: 'Лазерный прицел', desc: 'Вы видите траекторию выстрела вместе с рикошетами', max: 1,
     apply: (s) => { s.laser = true; } },

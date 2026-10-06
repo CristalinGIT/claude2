@@ -723,6 +723,8 @@ export class Game {
     if (b.split) {
       // Осколки: пуля расходится на две под углом.
       b.split = false;
+      // Осколки слабее целой пули.
+      b.dmg *= 0.6;
       const a = Math.atan2(b.vy, b.vx);
       const sp = Math.hypot(b.vx, b.vy);
       const twin = { ...b, id: this.nextId++, dead: false, hit: b.hit ? new Set(b.hit) : null };

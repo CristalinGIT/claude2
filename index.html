@@ -37,7 +37,7 @@
       <details class="help">
         <summary>Как играть</summary>
         <p>Все в одной Wi-Fi сети или на раздаче с телефона. Один нажимает «Создать игру» и называет код, остальные вводят его и жмут «Войти».</p>
-        <p>Левый стик — движение, правый — прицел и стрельба, круглая кнопка над ним — способность. На компьютере: WASD, мышь, способность — E, Shift, пробел или правая кнопка мыши, вторая способность — Q.</p>
+        <p>Левый стик — движение, башня смотрит туда, куда едете. Кнопка 🔥 — огонь (держите — стреляет очередью), круглые кнопки — способности. В настройках можно включить управление двумя стиками. На компьютере: WASD, мышь, способности — E и Q.</p>
         <p>Пули рикошетят — и после рикошета могут попасть в вас самих.</p>
         <p>Режим «Раунды»: без возрождений, раунд выигрывает последний выживший (или команда). Проигравшие получают карточку усиления, победитель — очко.</p>
       </details>
@@ -117,6 +117,7 @@
       </div>
     </div>
     <div id="center-msg" class="hidden"></div>
+    <button id="btn-fire" class="hidden" aria-label="Огонь">🔥</button>
     <button id="btn-ability" class="ab-btn hidden" aria-label="Способность"><span class="ab-icon"></span><span class="ab-cd"></span></button>
     <button id="btn-ability2" class="ab-btn hidden" aria-label="Вторая способность"><span class="ab-icon"></span><span class="ab-cd"></span></button>
     <div id="draft" class="overlay hidden">
@@ -174,6 +175,14 @@
         <button class="close-overlay" aria-label="Закрыть">✕</button>
       </div>
       <div class="setting">
+        <span>Управление</span>
+        <div class="seg" id="opt-scheme">
+          <button data-v="simple">Простое</button>
+          <button data-v="twin">Два стика</button>
+        </div>
+        <p class="hint" id="opt-scheme-hint"></p>
+      </div>
+      <div class="setting">
         <span>Джойстики</span>
         <div class="seg" id="opt-sticks">
           <button data-v="fixed">Фиксированные</button>
@@ -204,6 +213,7 @@
     </div>
     <div class="le-item" data-k="move"><span>🕹️</span><small>Движение</small></div>
     <div class="le-item" data-k="aim"><span>🎯</span><small>Прицел</small></div>
+    <div class="le-item" data-k="fire"><span>🔥</span><small>Огонь</small></div>
     <div class="le-item" data-k="ab1"><span>✨</span><small>Способн. 1</small></div>
     <div class="le-item" data-k="ab2"><span>💣</span><small>Способн. 2</small></div>
   </div>

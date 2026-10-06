@@ -505,3 +505,18 @@ button.ghost { background: transparent; color: var(--muted); }
 @media (orientation: portrait) and (pointer: coarse) {
   body:has(#layout-editor:not(.hidden)) #rotate { display: flex; }
 }
+
+#btn-fire {
+  position: absolute;
+  border-radius: 50%;
+  padding: 0;
+  border: 3px solid rgba(255, 120, 80, 0.75);
+  background: radial-gradient(circle at 40% 35%, rgba(255, 140, 90, 0.55), rgba(200, 50, 30, 0.45));
+  font-size: 1em;
+  z-index: 3;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#btn-fire.down { transform: scale(0.92); background: rgba(255, 90, 50, 0.75); }

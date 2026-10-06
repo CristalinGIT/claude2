@@ -27,6 +27,10 @@ export class Input {
     this.abilityLatch = false;
     this.abilityLatch2 = false;
     this.fixed = false;
+    // 'simple' — башня смотрит по ходу движения, стрельба кнопкой; 'twin' — два стика.
+    this.scheme = 'simple';
+    this.fireHeld = false;
+    this.lastDir = null;
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
       if (this.enabled && !e.repeat && ['KeyE', 'ShiftLeft', 'ShiftRight', 'Space'].includes(e.code)) this.abilityLatch = true;
@@ -72,6 +76,11 @@ export class Input {
   // Какой стик берёт это касание.
   stickFor(px, py) {
     const m = itemPx(this.layout, 'move'), a = itemPx(this.layout, 'aim');
+    if (this.scheme === 'simple') {
+      // Только стик движения: рядом с ним (фиксированный) или в левой нижней части (плавающий).
+      if (this.fixed) return Math.hypot(px - m.x, py - m.y) < m.size * 1.3 ? this.move : null;
+      return py >= window.innerHeight * ZONE_TOP && px < window.innerWidth / 2 ? this.move : null;
+    }
     if (this.fixed) {
       // Фиксированные: ближайший стик, если касание не слишком далеко от него.
       const dm = Math.hypot(px - m.x, py - m.y) / (m.size / 2);
@@ -147,7 +156,8 @@ export class Input {
 
   // Стик в покое — полупрозрачный в своём углу, чтобы было видно, где зона управления.
   rest(stick) {
-    if (!this.touchUi || !this.enabled) { stick.el.style.display = 'none'; return; }
+    const off = stick === this.aim && this.scheme === 'simple';
+    if (!this.touchUi || !this.enabled || off) { stick.el.style.display = 'none'; return; }
     const [x, y] = this.restPos(stick);
     stick.x = stick.y = 0;
     showStick(stick, x, y);
@@ -160,7 +170,8 @@ export class Input {
   }
 
   read() {
-    let mx = this.move.x, my = this.move.y;
+    const rawX = this.move.x, rawY = this.move.y;
+    let mx = rawX, my = rawY;
     if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) mx -= 1;
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) mx += 1;
     if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) my -= 1;
@@ -171,7 +182,12 @@ export class Input {
 
     let ax = this.aim.x, ay = this.aim.y, fire = false;
     const am = Math.hypot(ax, ay);
-    if (this.aim.id !== null) {
+    if (mx || my) this.lastDir = [mx, my];
+    if (this.scheme === 'simple' && !this.mouse.active) {
+      // Башня смотрит туда, куда едем (или ехали последний раз).
+      [ax, ay] = this.lastDir ?? [0, 0];
+      fire = this.fireHeld || this.keys.has('KeyJ');
+    } else if (this.aim.id !== null) {
       // Стик прицела отклонён достаточно сильно — стреляем.
       fire = am > 0.45;
     } else if (this.mouse.active) {
@@ -191,6 +207,7 @@ export class Input {
     }
     this.keys.clear();
     this.mouse.down = false;
+    this.fireHeld = false;
   }
 }
 
