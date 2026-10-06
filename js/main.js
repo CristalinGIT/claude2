@@ -9,7 +9,7 @@ import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { sfx, unlockAudio, setMuted } from './sound.js';
 
-const APP_VERSION = '12';
+const APP_VERSION = '13';
 
 const MAX_HUMANS = 8;
 const MAX_TANKS = 12;
@@ -86,6 +86,8 @@ function initMenu() {
   });
   $('#map-prev').addEventListener('click', () => hostStepMap(-1));
   $('#map-next').addEventListener('click', () => hostStepMap(1));
+  $('#bounce-minus').addEventListener('click', () => hostSetSettings({ bounces: clamp((app.settings.bounces ?? 1) - 1, 0, 5) }));
+  $('#bounce-plus').addEventListener('click', () => hostSetSettings({ bounces: clamp((app.settings.bounces ?? 1) + 1, 0, 5) }));
   $('#target-minus').addEventListener('click', () => hostStepTarget(-1));
   $('#target-plus').addEventListener('click', () => hostStepTarget(1));
   $('#btn-fill').addEventListener('click', hostFillBots);
@@ -965,6 +967,8 @@ function renderLobby(players, settings) {
   $('#target-val').textContent = rounds ? settings.roundsToWin : settings.killsToWin;
   $('#target-minus').disabled = $('#target-plus').disabled = !isHost;
   $('#map-prev').disabled = $('#map-next').disabled = !isHost;
+  $('#bounce-minus').disabled = $('#bounce-plus').disabled = !isHost;
+  $('#bounce-val').textContent = settings.bounces ?? 1;
   $('#map-name').textContent = mapLabel(settings.map ?? 'random');
   $('#mode-hint').textContent = rounds
     ? 'Без возрождений: раунд идёт, пока не останется один игрок или одна команда. Проигравшие выбирают карточку усиления.'
@@ -1059,7 +1063,7 @@ function frame(now) {
   const myStats = myStatsCached();
   renderer.render(view, app.myId, dt, now / 1000, {
     isAlly,
-    laser: myStats.laser ? { bounces: myStats.bounces } : null,
+    laser: myStats.laser ? { bounces: myStats.bounces + (app.settings.bounces ?? 1) - 1 } : null,
   });
   updateAbilityButton(myStats);
   if (view.phase !== app.lastPhase) onPhaseChange(view, app.lastPhase);

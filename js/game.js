@@ -49,7 +49,7 @@ export const COLORS = [
 export const TEAM_COLORS = [0xff4d4d, 0x4da6ff, 0x5ce65c, 0xffd23f];
 export const TEAM_NAMES = ['Красные', 'Синие', 'Зелёные', 'Жёлтые'];
 
-export const DEFAULT_SETTINGS = { mode: 'rounds', teams: 0, roundsToWin: 5, killsToWin: 10, map: 'random' };
+export const DEFAULT_SETTINGS = { mode: 'rounds', teams: 0, roundsToWin: 5, killsToWin: 10, map: 'random', bounces: 1 };
 
 // Флаги танка в снимке.
 export const TF = { ALIVE: 1, INV: 2, INVIS: 4, POISONED: 8, SLOWED: 16 };
@@ -91,7 +91,7 @@ export class Game {
     const t = {
       id, name, color, bot, team,
       x: 0, y: 0, vx: 0, vy: 0, rot: 0, tur: 0,
-      cards: [], s: statsFromCards([]),
+      cards: [], s: this.statsFor([]),
       hp: 100, shield: 0, shieldT: 0, alive: false, respawnT: 0, cd: 0, inv: 0, zoneT: 0,
       lastHurt: 0, abilityTs: [0, 0], invisT: 0, ambushReady: false, slowT: 0, poison: [],
       lastChanceUsed: false, ramCd: new Map(),
@@ -127,8 +127,15 @@ export class Game {
     if (input.ability2) t.input.ability2 = true;
   }
 
+  // Характеристики с учётом настроек матча (базовое число рикошетов).
+  statsFor(cards) {
+    const s = statsFromCards(cards);
+    s.bounces += (this.settings.bounces ?? 1) - 1;
+    return s;
+  }
+
   resetTank(t) {
-    t.s = statsFromCards(t.cards);
+    t.s = this.statsFor(t.cards);
     t.hp = t.s.maxHp;
     t.shield = t.s.shieldCd ? 1 : 0;
     t.shieldT = 0;
@@ -154,7 +161,7 @@ export class Game {
     const t = this.tanks.get(id);
     if (!t) return;
     t.cards = cards;
-    t.s = statsFromCards(cards);
+    t.s = this.statsFor(cards);
     if (t.alive) {
       t.hp = t.s.maxHp;
       t.shield = t.s.shieldCd ? 1 : 0;
@@ -458,6 +465,12 @@ export class Game {
     }
     if (isRaging(t)) dmgMul *= 1.4;
     this.volley(t, dmgMul);
+    // Отдача: танк отталкивает назад.
+    if (s.recoil) {
+      t.x -= Math.cos(t.tur) * s.recoil;
+      t.y -= Math.sin(t.tur) * s.recoil;
+      resolveWalls(t);
+    }
     t.burst = [];
     for (let i = 1; i < s.burst; i++) t.burst.push({ t: 0.1 * i, mul: dmgMul });
   }
@@ -737,7 +750,7 @@ export class Game {
       // Осколки: пуля расходится на две под углом.
       b.split = false;
       // Осколки слабее целой пули.
-      b.dmg *= 0.6;
+      b.dmg *= 0.7;
       const a = Math.atan2(b.vy, b.vx);
       const sp = Math.hypot(b.vx, b.vy);
       const twin = { ...b, id: this.nextId++, dead: false, hit: b.hit ? new Set(b.hit) : null };
