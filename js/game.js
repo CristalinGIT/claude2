@@ -138,6 +138,9 @@ export class Game {
     t.slowT = 0;
     t.poison = [];
     t.lastChanceUsed = false;
+    t.burst = [];
+    t.adrenT = 0;
+    t.regenT = 0;
     t.input.ability = false;
     t.rot = t.tur = Math.atan2(MAP.h * CELL / 2 - t.y, MAP.w * CELL / 2 - t.x);
   }
@@ -340,7 +343,10 @@ export class Game {
     const px = t.x, py = t.y;
     t.slowT = Math.max(0, t.slowT - dt);
     const slowed = t.slowT > 0 || (t.poison.length && t.poison.some((p) => p.neuro));
-    const speed = CFG.TANK_SPEED * s.speed * (slowed ? (t.slowT > 0 ? 0.65 : 0.6) : 1);
+    t.adrenT = Math.max(0, (t.adrenT || 0) - dt);
+    let speed = CFG.TANK_SPEED * s.speed * (slowed ? (t.slowT > 0 ? 0.65 : 0.6) : 1);
+    if (t.adrenT > 0) speed *= 1.4;
+    if (isRaging(t)) speed *= 1.15;
     t.x += mx * speed * dt;
     t.y += my * speed * dt;
     resolveWalls(t);
@@ -361,11 +367,19 @@ export class Game {
       if (t.shieldT >= s.shieldCd) { t.shield = 1; t.shieldT = 0; }
     }
 
-    // Ремкомплект: чинит, если какое-то время не получали урон.
-    if (s.regenRate && t.hp < s.maxHp && this.time - t.lastHurt >= s.regenDelay) {
-      const before = Math.floor(t.hp / 10);
-      t.hp = Math.min(s.maxHp, t.hp + s.regenRate * dt);
-      if (Math.floor(t.hp / 10) !== before) this.events.push([EV.HEAL, r2(t.x), r2(t.y), t.id]);
+    // Ремкомплект: после паузы без урона чинит порцию HP раз в несколько секунд.
+    if (s.regenAmount && t.hp < s.maxHp && this.time - t.lastHurt >= s.regenDelay) {
+      // Первая порция — сразу после паузы, дальше раз в regenEvery секунд.
+      t.regenT = (t.regenT || 0) + dt;
+      if (!t.regenOn || t.regenT >= s.regenEvery) {
+        t.regenOn = true;
+        t.regenT = 0;
+        t.hp = Math.min(s.maxHp, t.hp + s.regenAmount);
+        this.events.push([EV.HEAL, r2(t.x), r2(t.y), t.id]);
+      }
+    } else {
+      t.regenT = 0;
+      t.regenOn = false;
     }
 
     // Отложенный урон от яда.
@@ -401,6 +415,11 @@ export class Game {
       inp.ability = false;
       if (canAct && s.ability && t.abilityT <= 0) this.useAbility(t);
     }
+    // «Очередь»: догоняющие залпы вылетают друг за другом.
+    if (t.burst?.length) {
+      for (const b of t.burst) b.t -= dt;
+      while (t.burst.length && t.burst[0].t <= 0) this.volley(t, t.burst.shift().mul);
+    }
     if (inp.fire && t.cd <= 0 && canAct) this.fire(t);
   }
 
@@ -414,6 +433,14 @@ export class Game {
       if (s.ambush) dmgMul = 2;
       t.invisT = 0;
     }
+    if (isRaging(t)) dmgMul *= 1.4;
+    this.volley(t, dmgMul);
+    t.burst = [];
+    for (let i = 1; i < s.burst; i++) t.burst.push({ t: 0.1 * i, mul: dmgMul });
+  }
+
+  volley(t, dmgMul) {
+    const s = t.s;
     const spread = 0.17;
     const off = CFG.TANK_R * 0.6;
     const barrels = s.twin ? [-0.28, 0.28] : [0];
@@ -440,7 +467,7 @@ export class Game {
           neuro: s.neuro,
           ice: s.ice,
           hit: null,
-          life: CFG.BULLET_LIFE,
+          life: CFG.BULLET_LIFE * s.bLife,
           bounces: 0,
         });
       }
@@ -609,6 +636,7 @@ export class Game {
     for (const b of this.bullets) {
       b.life -= dt;
       if (b.homing) this.steer(b, dt);
+      this.magnet(b, dt);
       for (let s = 0; s < SUB && !b.dead; s++) {
         b.x += b.vx * h;
         if (isSolid(b.x, b.y)) { this.hitWallCell(b); if (b.dead) break; b.x -= b.vx * h; b.vx = -b.vx; this.bounce(b, spawned); }
@@ -647,6 +675,23 @@ export class Game {
     w.hp--;
     this.events.push([EV.FIZZLE, r2(b.x), r2(b.y), 0]);
     if (w.hp <= 0) this.breakWall(key);
+  }
+
+  // Магнитная броня: вражеские пули рядом отклоняются в сторону от танка.
+  magnet(b, dt) {
+    for (const t of this.tanks.values()) {
+      if (!t.alive || !t.s.magnet || t.id === b.owner || (this.teams && t.team === b.team)) continue;
+      const dx = b.x - t.x, dy = b.y - t.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 3.2 || d < 0.01) continue;
+      const cur = Math.atan2(b.vy, b.vx);
+      // Поворачиваем скорость пули к направлению «от танка».
+      const away = Math.atan2(dy, dx);
+      const turn = clamp(angleDiff(cur, away), -1, 1) * (1 - d / 3.2) * 4 * dt;
+      const sp = Math.hypot(b.vx, b.vy);
+      b.vx = Math.cos(cur + turn) * sp;
+      b.vy = Math.sin(cur + turn) * sp;
+    }
   }
 
   // Самонаведение: плавно поворачиваем пулю к ближайшему врагу впереди.
@@ -761,6 +806,8 @@ export class Game {
     }
     t.hp -= amount;
     t.lastHurt = this.time;
+    t.regenT = 0;
+    if (t.s.adrenaline) t.adrenT = 1.5;
     this.events.push([EV.HIT, r2(t.x), r2(t.y), t.id]);
 
     const attacker = this.tanks.get(attackerId);
@@ -865,6 +912,11 @@ function botPick(options) {
   const evo = options.find((id) => CARD_BY_ID.get(id)?.kind === 'evo');
   if (evo) return evo;
   return options[Math.floor(Math.random() * options.length)];
+}
+
+// «Ярость»: усиление при низком здоровье.
+function isRaging(t) {
+  return t.s.rage && t.hp < t.s.maxHp * 0.4;
 }
 
 // Помещается ли танк в точке (не задевает стены).

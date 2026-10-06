@@ -26,8 +26,16 @@ export function defaultStats() {
     spread: 0,         // случайный разброс, радианы
     shieldCd: 0,       // перезарядка щита, 0 — щита нет
     mirror: false,
-    regenDelay: 0,     // через сколько секунд без урона начинается ремонт, 0 — нет
-    regenRate: 0,      // HP в секунду
+    regenDelay: 0,     // через сколько секунд без урона начинается ремонт
+    regenEvery: 5,     // период ремонта, секунд
+    regenAmount: 0,    // HP за раз, 0 — нет ремкомплекта
+    burst: 1,          // пуль в очереди друг за другом
+    bLife: 1,          // множитель дальности полёта пули
+    hpMul: 1,
+    abilityCdMul: 1,
+    rage: false,
+    adrenaline: false,
+    magnet: false,
     vampire: 0,        // доля урона, возвращаемая здоровьем
     homing: 0,
     selfImmune: false,
@@ -72,6 +80,8 @@ export const CARDS = [
     apply: (s) => { s.shots += 1; s.cdMul *= 1.15; } },
   { id: 'twin', kind: 'stat', icon: '⏸️', name: 'Двойной ствол', desc: 'Две параллельные пули за выстрел, урон каждой −40%', max: 1,
     apply: (s) => { s.twin = true; s.damage *= 0.6; } },
+  { id: 'burst', kind: 'stat', icon: '⏩', name: 'Очередь', desc: '+1 пуля вслед за первой (друг за другом), урон каждой −35%', max: 2,
+    apply: (s) => { s.burst += 1; s.damage *= s.burst === 2 ? 0.65 : 0.8; } },
   { id: 'homing', kind: 'stat', icon: '🎯', name: 'Самонаведение', desc: 'Пули заметно доворачивают к врагу, урон −20%', max: 2,
     apply: (s) => { s.homing += 1; s.damage *= 0.8; } },
   { id: 'poison', kind: 'stat', icon: '☠️', name: 'Отравляющая пуля', desc: 'Попадание: половина урона сразу и ещё 45% через 1.5 с', max: 1,
@@ -85,6 +95,15 @@ export const CARDS = [
   { id: 'laser', kind: 'stat', icon: '🔦', name: 'Лазерный прицел', desc: 'Вы видите траекторию выстрела вместе с рикошетами', max: 1,
     apply: (s) => { s.laser = true; } },
 
+  { id: 'sniper', kind: 'stat', icon: '🔭', name: 'Снайпер', desc: 'Пули на 60% быстрее и урон +25%, но перезарядка на 40% дольше', max: 1,
+    apply: (s) => { s.bSpeed *= 1.6; s.damage *= 1.25; s.cdMul *= 1.4; } },
+  { id: 'glass', kind: 'stat', icon: '🍷', name: 'Стеклянная пушка', desc: 'Урон +40%, но здоровье −30%', max: 1,
+    apply: (s) => { s.damage *= 1.4; s.hpMul *= 0.7; } },
+  { id: 'longshot', kind: 'stat', icon: '📏', name: 'Дальнобой', desc: 'Пули живут на 60% дольше — дальше летят и больше рикошетят', max: 1,
+    apply: (s) => { s.bLife *= 1.6; } },
+  { id: 'rage', kind: 'stat', icon: '😡', name: 'Ярость', desc: 'Когда здоровья меньше 40%: урон +40% и скорость +15%', max: 1,
+    apply: (s) => { s.rage = true; } },
+
   // ---- Живучесть и движение ----
   { id: 'armor', kind: 'stat', icon: '🛡️', name: 'Броня', desc: '+34 к здоровью (ещё одно попадание)', max: 3,
     apply: (s) => { s.maxHp += 34; } },
@@ -92,13 +111,21 @@ export const CARDS = [
     apply: (s) => { s.speed *= 1.18; } },
   { id: 'shield', kind: 'stat', icon: '🔵', name: 'Энергощит', desc: 'Щит поглощает попадание и восстанавливается за 7 с. Каждая следующая карта: −1 с', max: 3,
     apply: (s) => { s.shieldCd = s.shieldCd ? s.shieldCd - 1 : 7; } },
-  { id: 'regen', kind: 'stat', icon: '🔧', name: 'Ремкомплект', desc: 'Через 4 с без урона чинит 4 HP/с. Следующие карты: быстрее начинает и чинит', max: 3,
+  { id: 'regen', kind: 'stat', icon: '🔧', name: 'Ремкомплект', desc: 'Через 8 с без урона чинит 10 HP каждые 5 с. Следующие карты: начинает на 1 с раньше и +5 HP', max: 3,
     apply: (s) => {
-      s.regenDelay = s.regenDelay ? Math.max(2, s.regenDelay - 1) : 4;
-      s.regenRate = s.regenRate ? s.regenRate + 2 : 4;
+      s.regenDelay = s.regenDelay ? s.regenDelay - 1 : 8;
+      s.regenAmount = s.regenAmount ? s.regenAmount + 5 : 10;
     } },
   { id: 'vampire', kind: 'stat', icon: '🧛', name: 'Вампир', desc: 'Лечит вас на 33% от нанесённого урона', max: 1,
     apply: (s) => { s.vampire = 0.33; } },
+  { id: 'light', kind: 'stat', icon: '🪶', name: 'Лёгкий корпус', desc: 'Скорость +25%, но здоровье −20', max: 1,
+    apply: (s) => { s.speed *= 1.25; s.maxHp -= 20; } },
+  { id: 'adrenaline', kind: 'stat', icon: '💉', name: 'Адреналин', desc: 'После получения урона 1.5 с скорость +40%', max: 1,
+    apply: (s) => { s.adrenaline = true; } },
+  { id: 'magnet', kind: 'stat', icon: '🧲', name: 'Магнитная броня', desc: 'Вражеские пули рядом с вами отклоняются в сторону', max: 1,
+    apply: (s) => { s.magnet = true; } },
+  { id: 'overload', kind: 'stat', icon: '🔋', name: 'Перегрузка', desc: 'Способность перезаряжается на 30% быстрее, оружие — на 10% дольше', max: 2, needsAbility: true,
+    apply: (s) => { s.abilityCdMul *= 0.7; s.cdMul *= 1.1; } },
   { id: 'rubber', kind: 'stat', icon: '🪀', name: 'Резиновая броня', desc: 'Свои пули вас не ранят', max: 1,
     apply: (s) => { s.selfImmune = true; } },
   { id: 'lastChance', kind: 'stat', icon: '🍀', name: 'Последний шанс', desc: 'Раз за раунд смертельное попадание оставляет 1 HP', max: 1,
@@ -152,8 +179,9 @@ export function statsFromCards(cardIds) {
   for (const id of cardIds) CARD_BY_ID.get(id)?.apply(s);
   if (s.ability) {
     const a = ABILITIES[s.ability];
-    s.abilityCd = a.cd * Math.pow(0.8, (s.abilityLevels[s.ability] || 1) - 1);
+    s.abilityCd = a.cd * Math.pow(0.8, (s.abilityLevels[s.ability] || 1) - 1) * s.abilityCdMul;
   }
+  s.maxHp = Math.max(30, Math.round(s.maxHp * s.hpMul));
   return s;
 }
 
@@ -167,6 +195,7 @@ function countCards(owned) {
 export function cardAvailable(card, owned, stats = statsFromCards(owned)) {
   const count = countCards(owned);
   if ((count.get(card.id) || 0) >= card.max) return false;
+  if (card.needsAbility && !stats.ability) return false;
   if (card.reqId) {
     if ((count.get(card.reqId) || 0) < (card.reqN || 1)) return false;
     if (card.reqAbility && stats.ability !== card.reqId) return false;

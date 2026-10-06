@@ -593,7 +593,8 @@ function renderCatalog() {
       ? `<div class="cnt-ctl"><button data-cat="${c.id}" data-d="-1">−</button><em>${have}/${c.max}</em>` +
         `<button data-cat="${c.id}" data-d="1">+</button></div>`
       : `<div class="cnt">${have ? `у вас ${have}/${c.max}` : (c.max > 1 ? `до ${c.max} раз` : 'один раз')}</div>`;
-    const req = c.needs ? `<br><i>Эволюция, нужно: ${c.needs}</i>` : '';
+    const req = c.needs ? `<br><i>Эволюция, нужно: ${c.needs}</i>`
+      : c.needsAbility ? '<br><i>Выпадает, если есть способность</i>' : '';
     return `<div class="cat-item kind-${c.kind}${have ? ' owned' : ''}"><span class="card-icon">${c.icon}</span>` +
       `<b>${c.name}${cardBadge(c)}</b>${right}<span class="desc">${c.desc}${req}</span></div>`;
   }).join('');
