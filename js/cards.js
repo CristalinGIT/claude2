@@ -35,7 +35,6 @@ export function defaultStats() {
     abilityCdMul: 1,
     rage: false,
     adrenaline: false,
-    magnet: false,
     vampire: 0,        // доля урона, возвращаемая здоровьем
     homing: 0,
     selfImmune: false,
@@ -111,9 +110,9 @@ export const CARDS = [
     apply: (s) => { s.speed *= 1.18; } },
   { id: 'shield', kind: 'stat', icon: '🔵', name: 'Энергощит', desc: 'Щит поглощает попадание и восстанавливается за 7 с. Каждая следующая карта: −1 с', max: 3,
     apply: (s) => { s.shieldCd = s.shieldCd ? s.shieldCd - 1 : 7; } },
-  { id: 'regen', kind: 'stat', icon: '🔧', name: 'Ремкомплект', desc: 'Через 8 с без урона чинит 10 HP каждые 5 с. Следующие карты: начинает на 1 с раньше и +5 HP', max: 3,
+  { id: 'regen', kind: 'stat', icon: '🔧', name: 'Ремкомплект', desc: 'Через 8 с без урона чинит 1 деление (10 HP), дальше ещё по делению каждые 5 с. Урон сбрасывает отсчёт. Следующие карты: +5 HP за раз', max: 3,
     apply: (s) => {
-      s.regenDelay = s.regenDelay ? s.regenDelay - 1 : 8;
+      s.regenDelay = 8;
       s.regenAmount = s.regenAmount ? s.regenAmount + 5 : 10;
     } },
   { id: 'vampire', kind: 'stat', icon: '🧛', name: 'Вампир', desc: 'Лечит вас на 33% от нанесённого урона', max: 1,
@@ -122,8 +121,6 @@ export const CARDS = [
     apply: (s) => { s.speed *= 1.25; s.maxHp -= 20; } },
   { id: 'adrenaline', kind: 'stat', icon: '💉', name: 'Адреналин', desc: 'После получения урона 1.5 с скорость +40%', max: 1,
     apply: (s) => { s.adrenaline = true; } },
-  { id: 'magnet', kind: 'stat', icon: '🧲', name: 'Магнитная броня', desc: 'Вражеские пули рядом с вами отклоняются в сторону', max: 1,
-    apply: (s) => { s.magnet = true; } },
   { id: 'overload', kind: 'stat', icon: '🔋', name: 'Перегрузка', desc: 'Способность перезаряжается на 30% быстрее, оружие — на 10% дольше', max: 2, needsAbility: true,
     apply: (s) => { s.abilityCdMul *= 0.7; s.cdMul *= 1.1; } },
   { id: 'rubber', kind: 'stat', icon: '🪀', name: 'Резиновая броня', desc: 'Свои пули вас не ранят', max: 1,

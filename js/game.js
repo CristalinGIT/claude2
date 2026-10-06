@@ -636,7 +636,6 @@ export class Game {
     for (const b of this.bullets) {
       b.life -= dt;
       if (b.homing) this.steer(b, dt);
-      this.magnet(b, dt);
       for (let s = 0; s < SUB && !b.dead; s++) {
         b.x += b.vx * h;
         if (isSolid(b.x, b.y)) { this.hitWallCell(b); if (b.dead) break; b.x -= b.vx * h; b.vx = -b.vx; this.bounce(b, spawned); }
@@ -675,23 +674,6 @@ export class Game {
     w.hp--;
     this.events.push([EV.FIZZLE, r2(b.x), r2(b.y), 0]);
     if (w.hp <= 0) this.breakWall(key);
-  }
-
-  // Магнитная броня: вражеские пули рядом отклоняются в сторону от танка.
-  magnet(b, dt) {
-    for (const t of this.tanks.values()) {
-      if (!t.alive || !t.s.magnet || t.id === b.owner || (this.teams && t.team === b.team)) continue;
-      const dx = b.x - t.x, dy = b.y - t.y;
-      const d = Math.hypot(dx, dy);
-      if (d > 3.2 || d < 0.01) continue;
-      const cur = Math.atan2(b.vy, b.vx);
-      // Поворачиваем скорость пули к направлению «от танка».
-      const away = Math.atan2(dy, dx);
-      const turn = clamp(angleDiff(cur, away), -1, 1) * (1 - d / 3.2) * 4 * dt;
-      const sp = Math.hypot(b.vx, b.vy);
-      b.vx = Math.cos(cur + turn) * sp;
-      b.vy = Math.sin(cur + turn) * sp;
-    }
   }
 
   // Самонаведение: плавно поворачиваем пулю к ближайшему врагу впереди.

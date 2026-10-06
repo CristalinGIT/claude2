@@ -433,16 +433,19 @@ function buildTank(color) {
   const fillMat = new THREE.MeshBasicMaterial({ color: 0x6dff7a });
   const fill = new THREE.Mesh(BAR_FILL_GEO, fillMat);
   fill.position.set(-BAR_W / 2, 0.01, 0);
-  bar.add(bg, fill);
+  const ticks = new THREE.Group();
+  bar.add(bg, fill, ticks);
   root.add(bar);
 
-  return { root, body, turret, ring, bubble, bar, fill, fillMat, mats: [main, dark, tracks], opacity: 1, barKey: '' };
+  return { root, body, turret, ring, bubble, bar, fill, fillMat, ticks, tickMax: 0, mats: [main, dark, tracks], opacity: 1, barKey: '' };
 }
 
 const BAR_W = 1.4;
 const BAR_GEO = new THREE.BoxGeometry(BAR_W + 0.08, 0.06, 0.22);
 const BAR_FILL_GEO = new THREE.BoxGeometry(BAR_W, 0.07, 0.16).translate(BAR_W / 2, 0, 0);
 const BAR_BG = new THREE.MeshBasicMaterial({ color: 0x24242c });
+const TICK_GEO = new THREE.BoxGeometry(0.025, 0.08, 0.17);
+const TICK_MAT = new THREE.MeshBasicMaterial({ color: 0x15151b });
 
 function updateBar(tm, hp, maxHp) {
   const key = hp + '/' + maxHp;
@@ -453,6 +456,16 @@ function updateBar(tm, hp, maxHp) {
   tm.fillMat.color.setHex(k > 0.6 ? 0x6dff7a : k > 0.3 ? 0xffd23f : 0xff4d4d);
   // Бар чуть длиннее у танков с бронёй.
   tm.bar.scale.x = Math.min(1.6, 0.85 + maxHp / 650);
+  // Деления по 10 HP.
+  if (tm.tickMax !== maxHp) {
+    tm.tickMax = maxHp;
+    tm.ticks.clear();
+    for (let v = 10; v < maxHp; v += 10) {
+      const m = new THREE.Mesh(TICK_GEO, TICK_MAT);
+      m.position.set(-BAR_W / 2 + (v / maxHp) * BAR_W, 0.02, 0);
+      tm.ticks.add(m);
+    }
+  }
 }
 
 function setOpacity(tm, o) {
