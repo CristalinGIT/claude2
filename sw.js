@@ -1,5 +1,5 @@
 // Кэш для работы без интернета: после первого открытия игра грузится из памяти телефона.
-const VERSION = 'tankhaos-v15';
+const VERSION = 'tankhaos-v16';
 const FILES = [
   './',
   'index.html',

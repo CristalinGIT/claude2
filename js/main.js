@@ -9,7 +9,7 @@ import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { sfx, unlockAudio, setMuted } from './sound.js';
 
-const APP_VERSION = '15';
+const APP_VERSION = '16';
 
 const MAX_HUMANS = 8;
 const MAX_TANKS = 12;
@@ -86,6 +86,10 @@ function initMenu() {
   });
   $('#map-prev').addEventListener('click', () => hostStepMap(-1));
   $('#map-next').addEventListener('click', () => hostStepMap(1));
+  $('#set-bots').addEventListener('click', (e) => {
+    const v = e.target.closest('button')?.dataset.v;
+    if (v) hostSetSettings({ botLevel: v });
+  });
   $('#bounce-minus').addEventListener('click', () => hostSetSettings({ bounces: clamp((app.settings.bounces ?? 1) - 1, 0, 5) }));
   $('#bounce-plus').addEventListener('click', () => hostSetSettings({ bounces: clamp((app.settings.bounces ?? 1) + 1, 0, 5) }));
   $('#target-minus').addEventListener('click', () => hostStepTarget(-1));
@@ -968,6 +972,10 @@ function renderLobby(players, settings) {
   $('#target-minus').disabled = $('#target-plus').disabled = !isHost;
   $('#map-prev').disabled = $('#map-next').disabled = !isHost;
   $('#bounce-minus').disabled = $('#bounce-plus').disabled = !isHost;
+  for (const b of document.querySelectorAll('#set-bots button')) {
+    b.classList.toggle('on', b.dataset.v === (settings.botLevel ?? 'medium'));
+    b.disabled = !isHost;
+  }
   $('#bounce-val').textContent = settings.bounces ?? 1;
   $('#map-name').textContent = mapLabel(settings.map ?? 'random');
   $('#mode-hint').textContent = rounds

@@ -9,7 +9,7 @@ export const CFG = {
   TURN_SPEED: 10,
   BULLET_SPEED: 15,
   BULLET_R: 0.18,
-  BULLET_LIFE: 2.6,
+  BULLET_LIFE: 1.1,
   FIRE_CD: 0.55,
   RESPAWN: 2.5,
   INVULN: 1.5,
@@ -49,7 +49,7 @@ export const COLORS = [
 export const TEAM_COLORS = [0xff4d4d, 0x4da6ff, 0x5ce65c, 0xffd23f];
 export const TEAM_NAMES = ['Красные', 'Синие', 'Зелёные', 'Жёлтые'];
 
-export const DEFAULT_SETTINGS = { mode: 'rounds', teams: 0, roundsToWin: 5, killsToWin: 10, map: 'random', bounces: 1 };
+export const DEFAULT_SETTINGS = { mode: 'rounds', teams: 0, roundsToWin: 5, killsToWin: 10, map: 'random', bounces: 1, botLevel: 'medium' };
 
 // Флаги танка в снимке.
 export const TF = { ALIVE: 1, INV: 2, INVIS: 4, POISONED: 8, SLOWED: 16 };

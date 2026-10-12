@@ -2,8 +2,16 @@
 import { MAP, CELL, lineOfSight } from './map.js';
 import { CFG, angleDiff } from './game.js';
 
+// Уровни сложности: ошибка прицела (рад), время реакции, упреждение, шанс уворота, скорость движения.
+export const BOT_LEVELS = {
+  easy: { aimErr: 1.0, react: 0.9, lead: 0, dodge: 0.1, speed: 0.65, fireArc: 0.3, fireChance: 0.35, range: 11, ability: 0.25 },
+  medium: { aimErr: 0.55, react: 0.55, lead: 0.3, dodge: 0.4, speed: 0.85, fireArc: 0.2, fireChance: 0.65, range: 14, ability: 0.6 },
+  hard: { aimErr: 0.22, react: 0.25, lead: 0.8, dodge: 1, speed: 1, fireArc: 0.15, fireChance: 1, range: 17, ability: 1 },
+};
+
 export function botThink(game, t, dt) {
   const b = t.brain;
+  const L = BOT_LEVELS[game.settings.botLevel] ?? BOT_LEVELS.medium;
   b.retarget = (b.retarget ?? 0) - dt;
   b.repath = (b.repath ?? 0) - dt;
   b.strafeT = (b.strafeT ?? 0) - dt;
@@ -29,15 +37,18 @@ export function botThink(game, t, dt) {
     if (see) {
       // Упреждение по скорости цели плюс небольшая ошибка, чтобы бот не был идеальным.
       const lead = dist / (CFG.BULLET_SPEED * t.s.bSpeed);
-      const px = target.x + target.vx * lead * 0.8;
-      const py = target.y + target.vy * lead * 0.8;
+      const px = target.x + target.vx * lead * L.lead;
+      const py = target.y + target.vy * lead * L.lead;
+      // Прицел обновляется раз в L.react секунд — слабые боты целятся медленно и мимо.
       if (b.react <= 0) {
-        b.aimErr = (Math.random() - 0.5) * 0.22;
-        b.react = 0.25;
+        b.aimErr = (Math.random() - 0.5) * L.aimErr;
+        b.react = L.react;
+        b.aim = Math.atan2(py - t.y, px - t.x) + b.aimErr;
+        b.willFire = Math.random() < L.fireChance;
       }
-      const aim = Math.atan2(py - t.y, px - t.x) + (b.aimErr ?? 0);
+      const aim = b.aim ?? Math.atan2(py - t.y, px - t.x);
       ax = Math.cos(aim); ay = Math.sin(aim);
-      fire = Math.abs(angleDiff(t.tur, aim)) < 0.15 && dist < 22;
+      fire = b.willFire && Math.abs(angleDiff(t.tur, aim)) < L.fireArc && dist < L.range;
       // Стену ставим, когда цель рядом и мы ранены; мину — когда враг близко.
       if (dist < 12 && t.hp < t.s.maxHp * 0.7 && Math.random() < dt * 2) wantAbility = 'wall';
       if (dist < 9 && Math.random() < dt * 2) wantAbility = wantAbility || 'mine';
@@ -87,8 +98,10 @@ export function botThink(game, t, dt) {
     }
   }
 
-  // Уклонение от летящих в нас пуль.
-  for (const bl of game.bullets) {
+  // Уклонение от летящих в нас пуль (слабые боты замечают их не всегда).
+  b.dodgeRoll = (b.dodgeRoll ?? 0) - dt;
+  if (b.dodgeRoll <= 0) { b.canDodge = Math.random() < L.dodge; b.dodgeRoll = 0.5; }
+  for (const bl of (b.canDodge ? game.bullets : [])) {
     if (bl.owner === t.id && bl.bounces === 0) continue;
     if (bl.owner !== t.id && game.teams && bl.team === t.team) continue;
     const rx = t.x - bl.x, ry = t.y - bl.y;
@@ -122,10 +135,12 @@ export function botThink(game, t, dt) {
 
   const m = Math.hypot(mx, my);
   if (m > 1) { mx /= m; my /= m; }
+  mx *= L.speed; my *= L.speed;
   t.input.mx = mx; t.input.my = my;
   t.input.ax = ax; t.input.ay = ay;
   t.input.fire = fire;
   // Жмём нужную способность, если она есть в одном из слотов и готова.
+  if (wantAbility && Math.random() > L.ability) wantAbility = null;
   const slot = wantAbility ? t.s.abilities.indexOf(wantAbility) : -1;
   if (slot >= 0 && t.abilityTs[slot] <= 0) t.input[slot === 0 ? 'ability' : 'ability2'] = true;
 }
